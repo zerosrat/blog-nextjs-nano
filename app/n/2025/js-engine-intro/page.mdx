@@ -1,0 +1,335 @@
+export const metadata = {
+  title: '从零实现一个 JavaScript 引擎',
+  alternates: {
+    canonical: '/n/2025/js-engine-intro',
+  },
+}; 
+
+# 从零实现一个 JavaScript 引擎
+ 
+## 前言：为什么前端工程师需要了解 JS 引擎
+
+众所周知，JS 能在各种环境中运行，如浏览器、移动端、服务器、嵌入式设备，而 JS 引擎则是五花八门，如 V8、JS Core、Hermes、QuickJS。
+
+<Table 
+  data={{
+    headers: ["引擎", "开发方", "主要应用场景", "特点"],
+    rows: [
+      ["V8", "Google", "Chrome、Node.js、Deno", "JIT 强大，性能高，体积大"],
+      ["JSC", "Apple", "Safari、Bun", "轻量、兼容性好"],
+      ["Hermes", "Meta", "React Native 移动端", "AOT 编译、启动快、省内存、包体小"],
+      ["QuickJS", "Fabrice Bellard", "IoT、嵌入式、工具", "小巧、无 JIT、学习好"]
+    ]
+  }}
+/>
+
+以上 JS 引擎都是基于 C/C++ 实现的，一天晚上睡觉前突发奇想，为啥不可以通过 JS 语言本身来实现一个简单的 JS 引擎呢？基于此我开始并完成了该项目，并起了一个有意思的名字 js.js（项目地址见文末），顾名思义用 JS 来跑 JS。当然我并非是第一个产生该想法的人，网上搜查下会发现其他人已经实现了用 JS 写的 JS 引擎，如 [JS-Interpreter](https://github.com/NeilFraser/JS-Interpreter)。
+
+今天我们要做的是，回归 JS 引擎是如何一步步实现的，将大的遥不可及的任务拆分为小的可实现的单元。而通过这条路，我们可以明白如下系列问题的原因（这些问题我们会在文末一一解答）：Babel 是如何将 ES6+ 代码转换为 ES5 的；Node/Deno/Bun 和 JS 引擎的区别是什么；为什么 Chrome 和 Safari 的 JS 兼容性不一致等问题。这也是我们从会用 JS 到真正理解 JS 的第一步。
+
+## 项目展示：先看看效果
+
+在开始一步步实现之前，我们先看看当前 JS 引擎跑一段简单 JS 代码的效果。以下是 JS 代码片段：
+
+```javascript
+// 创建引擎实例
+import { SimpleJSEngine } from "../src/index.js";
+const engine = new SimpleJSEngine();
+
+// 执行基本运算
+const result1 = engine.run(`
+  let a = 10;
+  let b = 20;
+  let sum = a + b;
+  console.log("计算结果:", sum);
+  sum;
+`);
+console.log("返回值:", result1.result); // 30
+
+// 执行函数定义和调用
+const result2 = engine.run(`
+  function fibonacci(n) {
+    if (n <= 1) return n;
+    return fibonacci(n - 1) + fibonacci(n - 2);
+  }
+  fibonacci(8);
+`);
+console.log("斐波那契数列第8项:", result2.result); // 21
+
+```
+
+让我们来运行以上代码 `node intro.js`，会在控制台得到如下输出：
+
+```
+计算结果: 30
+返回值: 30
+斐波那契数列第8项: 21
+```
+
+## 项目概览：像搭积木一样实现 JS 引擎
+
+实现一个 JS 引擎，这个任务看上去艰巨、遥不可及，实际上我们可以将其进行任务拆分，得到三个核心组件（词法分析器、语法分析器、解释器），然后像搭积木一样完成它。
+
+```mermaid
+graph LR
+    Input["源代码"] --> Lexer["词法分析器<br/>Lexer"]
+    Lexer --> |"Token 流"| Parser["语法分析器<br/>Parser"]
+    Parser --> |"AST 树"| Interpreter["解释器<br/>Interpreter"]
+    Interpreter --> Output["执行结果"]
+```
+
+值得一提的是，现代 JS 引擎比上述步骤更为复杂，可以理解为上述步骤的加强版，如 V8 包含了字节码和 JIT 等手段来使得 JS 代码快速运行。而本篇的引擎则不包含这些优化手段，更加专注于 JS 引擎的核心概念，避免学习路线过于陡峭。
+
+## 一步一步实现：任务拆分与实现
+
+### 词法分析 Lexing
+
+词法分析器的工作就像是把一篇文章拆分成单词。一段代码经过了词法分析器的处理，就得到了一系列的 token，供下一步语法分析器进行解析。我们以 `let x = 1 + 2 * 3;` 这个代码为例，看看词法分析后得到了什么：
+
+```javascript
+"let x = 1 + 2 * 3;" 
+    ↓
+[
+  {type: 'LET', value: 'let', line: 1, column: 1},
+  {type: 'IDENTIFIER', value: 'x', line: 1, column: 5},
+  {type: 'ASSIGN', value: '=', line: 1, column: 7},
+  {type: 'NUMBER', value: 1, line: 1, column: 9},
+  {type: 'PLUS', value: '+', line: 1, column: 11},
+  {type: 'NUMBER', value: 2, line: 1, column: 13},
+  {type: 'MULTIPLY', value: '*', line: 1, column: 15},
+  {type: 'NUMBER', value: 3, line: 1, column: 17},
+  {type: 'SEMICOLON', value: ';', line: 1, column: 18}
+]
+```
+
+可以看见我们得到了一系列的 token，而这些 token 有不同的种类，像 `let` 和 `x` 显然不是同一种 token，前者是用于声明变量的关键字、后者是变量，所以它们的 type 是不同的。除了类型信息，还包含了 token 值以及位置信息。
+
+了解了输入输出后，我们可以着手开始实现词法分析器了，以下是词法分析器的核心代码片段：
+
+```javascript
+// 核心实现思路
+export class Lexer {
+  constructor(code) {
+    this.code = code;
+    this.position = 0;
+    this.line = 1;
+    this.column = 1;
+  }
+
+  // 主要方法：将字符流转换为 Token 流
+  tokenize() {
+    const tokens = [];
+    while (!this.isAtEnd()) {
+      const token = this.scanToken();
+      if (token) tokens.push(token);
+    }
+    return tokens;
+  }
+}
+```
+
+### 语法分析 Parsing
+
+接下来便是进行语法分析，核心是构建 AST。
+
+抽象语法树（Abstract Syntax Tree，AST），或简称语法树（Syntax tree），是源代码语法结构的一种抽象表示。AST 在前端工程化领域是非常重要的，如 Babel、ESLint、CSS 预处理器都建立在 AST 的处理之上。
+
+之前的步骤中从 `let x = 1 + 2 * 3;` 得到了 token 流，将其输入到语法分析器中，以构建 AST，如下所示：
+
+```javascript
+Token 流 → AST 树
+{
+  type: 'VariableDeclaration',
+  kind: 'let',
+  declarations: [{
+    type: 'VariableDeclarator',
+    id: {type: 'Identifier', name: 'x'},
+    init: {
+      type: 'BinaryExpression',
+      operator: '+',
+      left: {type: 'Literal', value: 1},
+      right: {
+        type: 'BinaryExpression',  // 🔍 乘法在更深层，优先级更高
+        operator: '*',
+        left: {type: 'Literal', value: 2},
+        right: {type: 'Literal', value: 3}
+      }
+    }
+  }]
+}
+```
+
+语法分析器使用递归下降算法，将平坦的 Token 流转换为层次化的 AST：
+
+```javascript
+/** 
+ * 从低到高优先级的递归调用
+ * parseExpression()           // 入口
+ *   ↓
+ * parseAssignment()          // 赋值 = (优先级最低)
+ *  ↓  
+ * parseLogicalOr()           // 逻辑或 ||
+ *  ↓
+ * ...
+ *  ↓
+ * parsePrimary()             // 最高优先级：数字、标识符、括号
+ */
+
+// 递归下降解析示例
+parseExpression() {
+  return this.parseAssignmentExpression();
+}
+
+parseAssignmentExpression() {
+  const left = this.parseLogicalOrExpression();
+
+  if (this.match(TokenType.ASSIGN)) {
+    const operator = this.getCurrentToken().value;
+    this.advance();
+    const right = this.parseAssignmentExpression();
+    // 生成树节点
+    return new AST.AssignmentExpression(operator, left, right);
+  }
+
+  return left;
+}
+```
+
+可以看到，我们递归的调用链的优先即是从低到高的，这样可以保证位于调用链更深的为更高优先级的，由此高优先级可以被优先处理。递归下降算法也是编译原理中的经典技巧~
+
+📊 **注意 AST 中的优先级体现**：
+
+- `*` 运算符在 AST 的更深层（作为 `+` 的右操作数）
+- 确保执行时先计算 `2 * 3 = 6`，再计算 `1 + 6 = 7`
+- 最终 `x` 的值是 `7` 而不是 `9`
+
+### 解释 Interpreting
+
+解释器通过**访问者模式**遍历 AST 并执行。
+
+**什么是访问者模式？**
+
+访问者模式将**操作**与**数据结构**分离：
+
+- AST 节点只负责存储数据结构（可以看见我们之前生成的 AST 上是不包含操作信息的）
+- 解释器作为"访问者"，定义对每种节点的具体操作
+
+```javascript
+// AST 节点：纯数据结构
+class BinaryExpression {
+  constructor(operator, left, right) {
+    this.type = 'BinaryExpression';  // 节点类型标识
+    this.operator = operator;        // 操作符
+    this.left = left;               // 左操作数
+    this.right = right;             // 右操作数
+  }
+}
+
+// 解释器：访问者，定义操作
+class Interpreter {
+  evaluate(node) {
+    switch (node.type) {           // 根据类型分发
+      case 'BinaryExpression':
+        return this.evaluateBinaryExpression(node);
+      case 'Literal':
+        return node.value;
+      // ...更多节点类型
+    }
+  }
+}
+```
+
+**访问者模式的优势：**
+- ✅ **扩展性强**：添加新操作（如代码优化、类型检查）无需修改AST节点
+- ✅ **职责分离**：解释器专注执行，优化器专注优化，打印器专注输出
+- ✅ **复用性好**：同一套AST可被多个访问者处理
+
+**执行过程可视化**：
+
+```javascript
+AST 树 → 执行步骤分解
+1. 访问 VariableDeclaration 节点
+2. 访问右侧的 BinaryExpression (+)
+3. 计算左操作数: 1
+4. 计算右操作数 BinaryExpression (*)：
+   - 计算 2 * 3 = 6
+5. 计算加法: 1 + 6 = 7
+6. 在环境中创建变量 x，值为 7
+```
+
+**项目中的实际实现：**
+
+```javascript
+// 解释器的核心分发方法
+evaluate(node) {
+  if (!node) return undefined;
+
+  switch (node.type) {
+    case 'Program':
+      return this.evaluateProgram(node);
+    case 'Literal':
+      return node.value;                    // 直接返回字面量值
+    case 'Identifier':
+      return this.environment.get(node.name); // 从环境中获取变量
+    case 'BinaryExpression':
+      return this.evaluateBinaryExpression(node);
+    case 'VariableDeclaration':
+      return this.evaluateVariableDeclaration(node);
+    case 'CallExpression':
+      return this.evaluateCallExpression(node);
+    // ... 支持多种节点类型
+  }
+}
+
+// 具体的访问方法示例
+evaluateBinaryExpression(node) {
+  const left = this.evaluate(node.left);   // 递归计算左操作数
+  const right = this.evaluate(node.right); // 递归计算右操作数
+  
+  switch (node.operator) {
+    case '+': return left + right;
+    case '*': return left * right;
+    case '==': return left == right;
+    // ... 更多操作符
+  }
+}
+```
+
+**关键技术实现：**
+
+- 🔄 **环境链**: 实现词法作用域和闭包
+- 🔄 **函数调用栈**: 支持递归和调用追踪
+- 🔄 **类型系统**: 动态类型转换和运算
+
+## 彩蛋：项目资源与互动
+
+**项目统计数据**
+
+<Table 
+  data={{
+    headers: ["维度", "数据", "说明"],
+    rows: [
+      ["🚀 代码规模", "~1,500 行", "纯 JavaScript 实现，零外部依赖"],
+      ["🎯 支持特性", "15+ 核心特性", "变量声明、函数、循环、闭包、对象等"],
+      ["⚡ 执行方式", "树遍历解释", "适合学习和原型验证，非生产优化"],
+      ["📦 技术栈", "ES6+ 模块", "使用 class、import/export 等现代语法"],
+      ["🧪 测试覆盖", "20+ 演示用例", "从基础运算到复杂递归，全面验证"],
+      ["🎓 学习价值", "编译原理入门", "词法分析 → 语法分析 → 解释执行"]
+    ]
+  }}
+/>
+
+**支持的 JavaScript 特性：**
+
+- ✅ 变量声明：`let`、`const`、`var`
+- ✅ 数据类型：数字、字符串、布尔值、数组、对象  
+- ✅ 运算符：算术运算、比较运算、逻辑运算
+- ✅ 控制流：`if/else`、`for`、`while` 循环
+- ✅ 函数：声明、调用、递归、闭包
+- ✅ 高级特性：作用域链、成员访问、内置函数
+
+**仓库地址**：[js.js](https://github.com/zerosrat/js.js)，欢迎大家 star~ ⭐
+
+这篇文章只是 JavaScript 引擎实现的入门文章，主要介绍了核心概念和整体架构。我后续会推出后续的文章，对各节进行展开讲讲。如果你希望看到这个系列继续下去，请在评论区留言或给项目点个 star 进行支持！
+
+致永不磨灭的激情和灵感
