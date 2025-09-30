@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
 @theme {
-  --font-family-sans: 'Inter', sans-serif;
+  --font-family-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
 :root {
@@ -22,9 +22,6 @@ html {
 
 body {
   text-rendering: optimizeLegibility;
-  line-height: 1.7;
-  font-size: 16px;
-  letter-spacing: 0.01em;
 }
 
 h1,
@@ -32,33 +29,6 @@ h2,
 h3,
 h4 {
   text-wrap: balance;
-}
-
-h1 {
-  font-weight: 800;
-  font-size: 2.25em;
-  margin-top: 0;
-  margin-bottom: .8888889em;
-}
-
-h2 {
-  font-weight: 700;
-  font-size: 1.5em;
-  margin-top: 2em;
-  margin-bottom: 1em;
-}
-
-h3 {
-  font-weight: 600;
-  font-size: 1.25em;
-  margin-top: 1.6em;
-  margin-bottom: .6em;
-}
-
-h4 {
-  font-weight: 600;
-  margin-top: 1.5em;
-  margin-bottom: .5em;
 }
 
 pre {
@@ -95,7 +65,7 @@ pre code {
   line-height: 1.5;
 }
 
-pre code > span .sh__token--identifier {
+pre code>span .sh__token--identifier {
   color: white !important;
 }
 
@@ -134,72 +104,4 @@ input[type='email'] {
   appearance: none;
 }
 
-/* 表格容器突破 60ch 限制并居中 */
-table {
-  display: table;
-  width: fit-content;
-  min-width: 100%;
-  max-width: 80ch;
-  white-space: nowrap;
-  text-align: left;
-  border-collapse: collapse;
-  margin: 1.5rem auto;
-  
-  /* 突破父容器并居中 */
-  position: relative;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-/* 桌面端：适当扩展宽度 */
-@media (min-width: 769px) {
-  table {
-    max-width: 100ch;
-  }
-}
-
-/* 移动端：适应屏幕宽度 */
-@media (max-width: 768px) {
-  table {
-    left: -1rem;
-    transform: none;
-    width: calc(100vw - 2rem);
-    max-width: calc(100vw - 2rem);
-    margin-left: 0;
-    margin-right: 0;
-  }
-}
-
-/* 极简边框样式 */
-table th {
-  border-bottom: 1px solid var(--color-gray-300);
-  padding: 0.75rem;
-  font-weight: 500;
-}
-
-table td {
-  border-bottom: 1px solid var(--color-gray-200);
-  padding: 0.5rem;
-}
-
-/* 列分割线 - 只在需要时显示 */
-table th:not(:last-child),
-table td:not(:last-child) {
-  border-right: 1px solid var(--color-gray-200);
-}
-
-/* 深色模式 */
-@media (prefers-color-scheme: dark) {
-  table th {
-    border-bottom-color: var(--color-zinc-600);
-  }
-  
-  table td {
-    border-bottom-color: var(--color-zinc-700);
-  }
-  
-  table th:not(:last-child),
-  table td:not(:last-child) {
-    border-right-color: var(--color-zinc-700);
-  }
-}
+/* 表格样式已移至 mdx-components.tsx */
