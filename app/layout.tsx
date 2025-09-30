@@ -1,49 +1,47 @@
-import './globals.css';
-import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import { Analytics } from '@vercel/analytics/react';
+import './globals.css'
+import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+// import { Analytics } from '@vercel/analytics/react'
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({
+  subsets: ['latin'],
+})
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://next-mdx-blog.vercel.app'),
+  metadataBase: new URL('https://zerosrat.dev'),
   alternates: {
-    canonical: '/'
+    canonical: '/',
   },
   title: {
-    default: 'John Smith',
-    template: '%s | John Smith'
+    default: 'Zero Yu',
+    template: '%s | Zero Yu',
   },
-  description: 'My portfolio, blog, and personal website.'
-};
+  description: 'My portfolio, blog, and personal website.',
+}
 
 export default function RootLayout({
-  children
+  children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${inter.className}`}>
+    <html lang="zh-CN" className={`${inter.className}`}>
       <body className="antialiased tracking-tight">
         <div className="min-h-screen flex flex-col justify-between pt-0 md:pt-8 p-8 dark:bg-zinc-950 bg-white text-gray-900 dark:text-zinc-200">
-          <main className="max-w-[60ch] mx-auto w-full space-y-6">
-            {children}
-          </main>
+          <main className="max-w-[60ch] mx-auto w-full space-y-6">{children}</main>
           <Footer />
-          <Analytics />
+          {/* <Analytics /> */}
         </div>
       </body>
     </html>
-  );
+  )
 }
 
 function Footer() {
   const links = [
-    { name: '@johnsmith', url: 'https://x.com/johnsmith' },
-    { name: 'youtube', url: 'https://www.youtube.com/@johnsmith' },
-    { name: 'linkedin', url: 'https://www.linkedin.com/in/johnsmith' },
-    { name: 'github', url: 'https://github.com/johnsmith' }
-  ];
+    { name: '@zerosrat', url: '' },
+    { name: 'github', url: 'https://github.com/zerosrat' },
+  ]
 
   return (
     <footer className="mt-12 text-center">
@@ -61,5 +59,5 @@ function Footer() {
         ))}
       </div>
     </footer>
-  );
+  )
 }
