@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     canonical: '/',
   },
   title: {
-    default: 'Zero Yu',
+    default: 'Blog | Zero Yu',
     template: '%s | Zero Yu',
   },
   description: 'My portfolio, blog, and personal website.',
