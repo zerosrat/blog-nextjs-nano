@@ -1,0 +1,263 @@
+# 一行代码引发的 Terser 版本陷阱
+
+## 1. 问题现象
+
+### 意外的白屏
+
+在业务需求上预发环境时，一个页面出现了白屏问题，控制台显示错误：
+
+```
+Uncaught SyntaxError: Unexpected token 'const'
+```
+
+这个现象让人困惑，因为：
+
+- **测试环境**：页面正常渲染，无任何问题
+- **预发环境**：页面白屏，JavaScript 执行失败
+
+### 构建产物分析
+
+为了找到白屏的根本原因，我们对构建产物进行了分析，发现白屏页面对应的 `xx.chunk.js` 文件中存在**语法错误**：
+
+```javascript
+// 错误的构建产物
+if (!condition) { run(params)} else const xx = ...;  // ❌ 语法错误！
+```
+
+可以对比构建产物和原始业务代码看到，terser 先对 if 进行了条件取反优化，然后为了压缩代码把 const 声明的 `{}` 优化掉了，导致了语法错误。
+
+这里的问题是：`const` 声明必须在块作用域 `{}` 中使用，花括号不可省略。但检查源码发现，原始代码中并没有这样的语法结构，说明是构建过程中 `{}` 被错误地优化了。
+
+```javascript
+// 原始代码（简版）
+if (condition) {
+  // 这里的 const 声明是不可去掉的
+  // 因为点击确认时需要用 inst 去更新 loading 状态
+  const inst = Modal.confirm({
+    onConfirm: () => {
+      ...
+      inst.update({ loading: true })
+      ...
+    }
+  })
+} else { run(params) }
+```
+
+### 环境差异的谜团
+
+为什么同样的代码在不同环境表现不同？经过分析发现关键差异：
+
+**测试环境流水线**：
+
+- 包含代码覆盖率插件
+- 对代码进行插桩处理
+- 在 `if` 下的 `const` 语句前插入覆盖率统计语句
+
+结果：terser 不会对这个 block 的 `{}` 进行优化，保留了正确语法
+
+**预发环境流水线**：
+
+- 无代码覆盖率插件
+- 代码直接进行压缩优化
+
+结果：terser 错误地移除了必要的花括号，导致语法错误
+
+这个发现让我们怀疑是 **webpack 构建配置** 有问题，特别是 **terser 的配置问题**。
+
+## 2. 初步分析
+
+> 项目是使用的未经 eject 的 `react-scripts`，如果需要自定义的话则需要使用 `config-overrides.js` 进行配置覆盖
+
+经过排查发现，问题出现在 `config-overrides.js` 中对 webpack 配置的覆盖：
+
+```javascript
+module.exports = override(
+  ...
+  (config) => {
+    config.optimization = {
+      // ...config.optimization, // 缺失对原有配置的合并
+      usedExports: true,
+      splitChunks: {
+        // 自定义分包配置
+      },
+    }
+    return config
+  }
+)
+```
+
+这个看似人畜无害的配置合并缺失，却引发了一连串的连锁反应。
+
+## 3. 问题根源：Webpack 的默认行为
+
+当我们完全自定义覆盖 `config.optimization` 时，丢失了 `react-scripts` 预配置的 minimizer。这时不难想到 Webpack 会使用内置的 TerserPlugin 及默认配置，因为当前有问题的配置下构建产物也是经过了压缩的。
+
+而深入 Webpack 4 的 [源码](https://github.com/webpack/webpack/blob/webpack-4/lib/WebpackOptionsDefaulter.js#L304) 可发现：
+
+```javascript
+this.set("optimization.minimizer", "make", options => [
+  {
+    apply: compiler => {
+      // Lazy load the Terser plugin
+      const TerserPlugin = require("terser-webpack-plugin");
+      const SourceMapDevToolPlugin = require("./SourceMapDevToolPlugin");
+      new TerserPlugin({
+        cache: true,
+        parallel: true,
+        sourceMap:
+          (options.devtool && /source-?map/.test(options.devtool)) ||
+          (options.plugins &&
+            options.plugins.some(p => p instanceof SourceMapDevToolPlugin))
+      }).apply(compiler);
+    }
+  }
+]);
+```
+
+**当 `optimization.minimizer` 未设置时，Webpack 会回退到默认的 TerserPlugin，而这个默认插件使用的是 `terser@4.8.1`。**
+
+## 4. 依赖分析
+
+通过检查 `yarn.lock` 和 `node_modules`，我们发现了关于 terser 版本的关键信息：
+
+```
+react-scripts@4.0.2 -> terser-webpack-plugin@4.2.3 -> terser@5.37.0  # 项目中明确指定的版本
+webpack@4.44.2 -> terser-webpack-plugin@1.4.6 -> terser@4.8.1   # webpack 4 默认使用的版本
+```
+
+`react-scripts` 配置的 TerserPlugin 使用 `terser@5.37.0`，而 webpack 的默认回退使用 `terser@4.8.1`。
+
+## 5. 版本验证实验
+
+为了验证是否确实是 terser 版本问题，我进行了对比实验：
+
+### 实验 1：`terser-webpack-plugin` 版本对比
+
+```javascript
+const TerserPlugin = require('terser-webpack-plugin')
+
+module.exports = override(
+  ...
+  (config) => {
+    config.optimization = {
+      minimizer: [
+        // 自行指定 TerserPlugin
+        new TerserPlugin({
+          cache: true,
+          parallel: true,
+        }),
+      ],
+      usedExports: true,
+      splitChunks: {
+        // 自定义分包配置
+      },
+    }
+    return config
+  }
+)
+```
+
+```json
+// 测试不同版本的 terser-webpack-plugin
+"terser-webpack-plugin": "4.2.3"  // ✅ 构建内容正确 (依赖 terser@^5.3.4)
+"terser-webpack-plugin": "1.4.6"  // ❌ 构建内容错误 (依赖 terser@^4.6.3)
+```
+
+### 实验 2：配置对比
+
+```javascript
+// 当前配置 - 构建失败
+config.optimization = {
+  // ...config.optimization, // 注释掉
+  // 自定义配置
+}
+
+// 修复后配置 - 构建成功
+config.optimization = {
+  ...config.optimization, // 添加配置合并
+  // 自定义配置
+}
+```
+
+## 6. 解决方案
+
+### 根本解决方案
+
+```javascript
+config.optimization = {
+  ...config.optimization, // 保留 react-scripts 的配置
+  usedExports: true,
+  splitChunks: {
+    // 自定义配置
+  },
+}
+```
+
+这样既保留了正确的 TerserPlugin 配置（使用 terser@5.37.0），又能添加自定义的优化设置。
+
+### 其他尝试过的方案
+
+**1. 强制版本 resolution**（失败）：
+
+```json
+"resolutions": {
+    "terser": "5.37.0"
+}
+```
+
+由于项目中有其他包也依赖了 terser，强锁到 v5 会导致其他兼容性问题造成构建失败。
+
+**2. 业务代码修改**（成功）：
+
+```javascript
+if (...) {
+  // 之前的组件库的 Modal.confirm api 不够优雅
+  // 换用了 antd Modal 可以不用声明 modal instance 实例
+  // 属于是曲线救国了
+  Modal.confirm({
+    onConfirm: () => {
+      return new Promise(...)
+    }
+  }) else { ... }
+}
+```
+
+## 7. 总结
+
+### 技术上的经验
+
+1. **配置覆盖**：使用展开运算符保留原有配置，而不是完全覆盖
+
+   ```javascript
+   // ❌ 错误做法
+   config.optimization = {
+     /* 自定义配置 */
+   }
+
+   // ✅ 正确做法
+   config.optimization = { ...config.optimization /* 自定义配置 */ }
+   ```
+
+2. **依赖版本**：大版本之间有差异
+
+   - terser@4.8.1 vs terser@5.37.0 的差异导致了语法错误
+
+3. **环境差异**：不同环境的流水线配置可能掩盖问题
+
+   - 测试环境的代码覆盖率插件意外"修复"了问题
+   - 预发环境暴露了真正的构建问题
+
+这次排查虽然最终解决方案很简单（进行配置合并），但过程中深入理解了：
+
+- **Webpack 的默认优化机制**：当配置被覆盖时会回退到默认行为
+- **Terser 不同版本的行为差异**：4.8.1 与 5.37.0 在条件优化上的关键差异
+- **复杂工具链中问题排查的方法论**：从现象到根因的系统化分析
+
+### 对于类似问题的建议
+
+1. **优先检查配置覆盖**：是否保留了原有设置
+2. **关注依赖版本变化**：特别是构建工具链中的隐式依赖
+3. **重视环境差异**：不同环境的构建配置可能掩盖问题
+4. **使用对比实验**：快速定位问题范围
+
+> **核心原则**：在修改构建配置时，始终对原有配置保持谨慎，使用合并而非覆盖的方式进行自定义。
