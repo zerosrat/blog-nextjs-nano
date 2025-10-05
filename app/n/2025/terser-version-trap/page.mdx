@@ -21,10 +21,10 @@ Uncaught SyntaxError: Unexpected token 'const'
 
 ```javascript
 // 错误的构建产物
-if (!condition) { run(params)} else const xx = ...;  // ❌ 语法错误！
+if (!condition) { run(params) } else const xx = ...;  // ❌ 语法错误！
 ```
 
-可以对比构建产物和原始业务代码看到，terser 先对 if 进行了条件取反优化，然后为了压缩代码把 const 声明的 `{}` 优化掉了，导致了语法错误。
+可以对比构建产物和原始业务代码看到，terser 先对 `if` 进行了条件取反优化，然后为了压缩代码把 `const` 声明的 `{}` 优化掉了，导致了语法错误。
 
 这里的问题是：`const` 声明必须在块作用域 `{}` 中使用，花括号不可省略。但检查源码发现，原始代码中并没有这样的语法结构，说明是构建过程中 `{}` 被错误地优化了。
 
@@ -218,8 +218,8 @@ if (...) {
     onConfirm: () => {
       return new Promise(...)
     }
-  }) else { ... }
-}
+  })
+} else { ... }
 ```
 
 ## 7. 总结
