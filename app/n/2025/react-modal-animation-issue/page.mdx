@@ -1,0 +1,223 @@
+# 为什么有些 Modal 有动画，有些没有？
+
+## 1. 问题背景
+
+最近在开发过程中遇到了一个有趣的 React Modal 组件动画不一致问题。在同一个代码库中，有些 Modal 弹窗有正常的关闭动画，而有些却没有动画，直接消失，导致用户体验很不一致。
+
+这种看似随机的行为让人困惑，特别是在相同的组件库和相似的业务场景下。
+
+**问题现象：**
+- ✅ 正常：点击按钮同步打开的 Modal，关闭时有缩放动画
+- ❌ 异常：接口请求后异步打开的 Modal，关闭时直接消失，无动画
+
+## 2. 问题排查过程
+
+### 初步怀疑：Context 逻辑问题
+
+一开始我怀疑是业务代码中 context 逻辑的问题，因为两个 Modal 是放在不同的 context 中打开的：
+
+```tsx
+// 发货 Modal Context（精简代码，省略了其他内容）
+export const DeliveryModalProvider: React.FC<DeliveryModalProviderProps> = ({ children }) => {
+  const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false)
+
+  const openDeliveryModal = (orderInfo: OrderInfo, refreshListFn?: () => void) => {
+    setIsDeliveryModalOpen(true)
+  }
+
+  return (
+    <DeliveryModalContext.Provider
+      value={{
+        isDeliveryModalOpen,
+        openDeliveryModal,
+      }}
+    >
+      {children}
+      <DeliveryModalContainer />
+    </DeliveryModalContext.Provider>
+  )
+}
+
+// 确认 Modal Context（精简代码，省略了其他内容）
+export const ConfirmModalProvider: React.FC<ConfirmModalProviderProps> = ({ children }) => {
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false)
+
+  const openConfirmModal = () => {
+    setIsConfirmModalOpen(true)
+  }
+
+  return (
+    <ConfirmModalContext.Provider
+      value={{
+        isConfirmModalOpen,
+        openConfirmModal,
+      }}
+    >
+      <ConfirmModalContainer />
+      {children}
+    </ConfirmModalContext.Provider>
+  )
+}
+```
+
+我尝试交换 context 顺序，将 context 逻辑做成一样的，但问题依然存在，排除了 context 的影响。
+
+### 深入分析：发现关键差异
+
+接着我深入业务代码分析，发现了一个关键模式：
+
+**发货按钮（✅ 正常动画）：**
+```tsx
+const Delivery = (props: DeliveryProps) => {
+  const { openDeliveryModal } = useDeliveryModalContext()
+
+  const handleClick = () => {
+    openDeliveryModal() // 🎯 直接同步打开
+  }
+
+  return <OperationNode operationText="发货" handleClick={handleClick} />
+}
+```
+
+**确认按钮（❌ 异常动画）：**
+```tsx
+const Confirm: React.FC<OrderConfirmModalProps> = ({ orderInfo, refreshList }) => {
+  const { openConfirmModal } = useConfirmModalContext()
+
+  const handleClick = async () => {
+    await request() // ⚠️ 异步请求，耗时 > 100ms
+    openConfirmModal() // 🎯 异步打开弹窗
+  }
+
+  return <OperationNode operationText="确认" handleClick={handleClick} />
+}
+```
+
+**关键差异：** 有问题的 Modal 都是在异步操作后打开的（比如接口调用后），而正常的 Modal 是同步打开的。
+
+## 3. 源码深入：定位根本原因
+
+由此怀疑动效的不同和 Modal 组件的实现有关。于是进一步阅读 Modal 组件源码，我发现了关键线索：
+
+### 全局鼠标位置追踪
+
+```tsx
+let mousePosition: { x: number, y: number } | null
+
+const getClickPosition = (e: MouseEvent) => {
+  mousePosition = {
+    x: e.pageX,
+    y: e.pageY,
+  }
+
+  // 100ms 内发生过点击事件，则从点击位置动画展示
+  // 否则直接 zoom 展示
+  setTimeout(() => {
+    mousePosition = null // 关键：100ms后清空
+  }, 100)
+}
+
+// 监听全局点击事件
+document.documentElement.addEventListener('click', getClickPosition, true)
+```
+
+### transformOrigin 的设置逻辑
+
+```tsx
+onPrepare = () => {
+  const { closeMotion } = this.props
+  if (closeMotion) return
+
+  const elementOffset = offset(this.modalMotionRef.current)
+  this.setState({
+    transformOrigin: mousePosition
+      ? `${mousePosition.x - elementOffset.left}px ${mousePosition.y - elementOffset.top}px`
+      : '', // 异步打开时这里就是空字符串！
+  })
+}
+```
+
+### AdvancedPortal 的关键逻辑
+
+```tsx
+render() {
+  const { visible } = this.props
+
+  return (
+    <AdvancedPortal
+      visible={visible || !!this.state.transformOrigin} // 关键行
+      // ...其他属性
+    >
+      {/* Modal 内容 */}
+    </AdvancedPortal>
+  )
+}
+```
+
+## 4. 根本原因分析
+
+问题的核心在于**时序问题**：
+
+1. **用户点击按钮时**：全局 `mousePosition` 被记录
+2. **100ms 后**：`mousePosition` 被自动清空
+3. **异步操作**：如果 Modal 是异步打开的（接口调用等），当 Modal 真正渲染时 `mousePosition` 已经是 `null`
+4. **transformOrigin 设置**：`onPrepare` 方法中的 `transformOrigin` 被设置为空字符串
+5. **Portal 销毁**：关键点在于 `AdvancedPortal` 的 `visible` 计算逻辑：`visible || !!this.state.transformOrigin`
+
+当 `transformOrigin` 为空时，Portal 在关闭动画开始前就被直接销毁，导致没有关闭动画。
+
+**完整的时序如下：**
+
+```
+同步打开 Modal:
+点击按钮 → mousePosition 记录 → 立即打开 Modal → onPrepare 设置 transformOrigin → 动画正常
+
+异步打开 Modal:
+点击按钮 → mousePosition 记录 → 发送请求 → 100ms 后 mousePosition 清空 →
+请求返回 → 打开 Modal → onPrepare 设置空 transformOrigin → Portal 提前销毁 → 无关闭动画
+```
+
+## 5. 解决方案
+
+基于对问题的深入理解，有以下几种解决思路：
+
+### 方案 1：组件库层面修复（推荐）
+
+在组件库的 `onPrepare` 方法中添加 fallback 机制，当 `mousePosition` 为空时，提供默认的动画起点：
+
+```tsx
+onPrepare = () => {
+  const elementOffset = offset(this.modalMotionRef.current)
+  this.setState({
+    transformOrigin: mousePosition
+      ? `${mousePosition.x - elementOffset.left}px ${mousePosition.y - elementOffset.top}px`
+      : 'center center', // 提供默认值而不是空字符串
+  })
+}
+```
+
+**优点**：从根本上解决问题。
+
+### 方案 2：业务代码层面规避
+
+如果无法修改组件库，可以修改业务代码的交互：
+
+```tsx
+const handleClick = () => {
+  // 修改确认弹窗的交互
+  // 先打开 Modal，在 Modal 内请求数据，并展示 loading 状态
+  openConfirmModal({ loading: true })
+}
+```
+
+**优点**：不依赖组件库修改，立即可用。
+
+**缺点**：需要业务代码做额外处理，不够优雅。
+
+## 6. 后记
+
+这个问题虽然看似很小，即为啥两个差不多的 Modal 的动效不同呢，但遇到这个问题激发了我的好奇心。通过一系列调试分析，最终找到了问题，还是挺有成就感的。
+
+这也是认识自己的一个过程，对于日复一日的业务代码开发对于我来说是缺乏挑战的。而偶然投进平静湖面的那块石头更能激发我的探索欲，更能让自己明白真正想要什么。
+
+对于此类问题，困难的部分其实不在于分析业务代码（我们都很熟悉自己写的代码），而是在于分析自己不熟悉的地方（如这个问题中，我对 Modal 内部的实现是不熟悉的）。但是 LLM 的出现降低了我们分析问题的成本，对于不熟悉的部分 LLM 可以作为一个优秀的副驾驶帮我们进行快速分析，这让工程师解决问题的效率变得更高了。
