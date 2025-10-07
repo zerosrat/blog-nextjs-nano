@@ -1,0 +1,167 @@
+{/* ---
+title: 谈谈 Function.prototype.bind() 的 polyfill
+date: 2017-12-01 11:01:38
+tags: JavaScript
+spoiler: 这篇博客实现可以延伸出其父话题：语言 API 的实现，如 Array.prototype.sort()。日常可以多思考这样的问题。
+--- */}
+
+export const metadata = {
+  title: '谈谈 Function.prototype.bind() 的 polyfill',
+   alternates: {
+    canonical: '/n/2017/js-bind-polyfill',
+  },
+}
+
+# 谈谈 Function.prototype.bind() 的 polyfill
+
+## 为啥写这篇博客
+
+以前一直是忽略了 `bind` 函数是怎么实现的，以致于看见下面这段代码时不知所措。
+
+``` js
+function largest(arr) {
+  return arr.map(Function.apply.bind(Math.max, null))
+}
+
+largest([[1,34],[456,2,3,44]) // [34, 456]
+```
+
+于是我便开始看 `bind` 的实现，其中也涉及了很多概念如下，是非常值得重温和学习的
+
+- 作用域链
+- 闭包
+- 柯里化
+- `new` 操作做了什么
+- ...
+
+
+## 基础
+
+从一段代码开始
+
+``` js
+var obj = {
+  a: 1,
+  print(x, y) {
+    console.log(this.a, x + y)
+  }
+}
+
+var test = {
+  a: 2
+}
+
+obj.print(1, 2) // 1 3
+
+obj.print.apply(test, [1, 2]) // 2 3
+obj.print.call(test, 1, 2) // 2 3
+obj.print.bind(test)(1, 2) // 2 3
+obj.print.bind(test, 1)(2) // 2 3
+obj.print.bind(test, 1, 2)() // 2 3
+```
+
+* [Function.prototype.call() - JavaScript | MDN](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Function/call)
+
+* [Function.prototype.apply() - JavaScript | MDN](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Function/apply)
+
+* [Function.prototype.bind() - JavaScript | MDN](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Function/bind)
+
+* [JavaScript专题之函数柯里化](https://github.com/mqyqingfeng/Blog/issues/42)
+
+---
+
+## 目标
+
+1. 返回一个由指定的 `this` 值（第一个参数）和初始化参数的新函数（是原函数的拷贝）
+2. 返回的新函数可以继续指定参数
+3. `bind` 函数不可通过 `new` 调用
+3. 新的绑定函数也能使用 `new` 操作符创建对象，这样做时指定的 `this` 无效
+
+## 从零开始实现
+
+下面代码实现了最简单的 `bind` 函数，返回新函数绑定了传入的 this 上下文以及给新函数传入了默认参数 arg
+
+``` js
+Function.prototype.bind = Function.prototype.bind || function(context) {
+  var target = this
+  var args = Array.prototype.slice.call(arguments, 1)
+  return () => target.apply(context, args)
+}
+```
+
+然后我们要求新函数也可以传入参数，这时候就不能用箭头函数了
+
+```js{6}
+Function.prototype.bind = Function.prototype.bind || function(context) {
+  var target = this
+  var args = Array.prototype.slice.call(arguments, 1)
+
+  return function() {
+    var newArgs = Array.prototype.slice.call(arguments)
+    target.apply(context, newArgs.concat(args))
+  }
+}
+```
+
+`new fn.bind()` 是非法的，非法调用的话要抛出异常
+
+``` js{2,3,4}
+Function.prototype.bind = Function.prototype.bind || function(context) {
+  if (typeof this !== 'function') {
+    throw new TypeError('Function.prototype.bind - what is trying to be bound is not callable')
+  }
+
+  var target = this
+  var args = Array.prototype.slice.call(arguments, 1)
+
+  return function() {
+    var newArgs = Array.prototype.slice.call(arguments)
+    target.apply(context, newArgs.concat(args))
+  }
+}
+```
+
+再来实现返回函数支持 `new` 操作。当代码 `new Foo(...)` 执行时：
+
+1. 一个新对象被创建。它继承自 `Foo.prototype`。
+2. 调用构造函数 `Foo`，并将 `this` 绑定到新创建的对象。
+
+``` js{9,10,11,18,19,20}
+Function.prototype.bind = Function.prototype.bind || function(context) {
+  if (typeof this !== 'function') {
+    throw new TypeError('Function.prototype.bind - what is trying to be bound is not callable')
+  }
+
+  var target = this
+  var args = Array.prototype.slice.call(arguments, 1)
+
+  var fn = function() {}
+  fn.prototype = target.prototype
+  fnBound.prototype = new fn()
+  // or use `Object.create()`
+  // fnBound.prototype = Object.create(target.prototype)
+
+  return function fnBound() {
+    var newArgs = Array.prototype.slice.call(arguments)
+    var finalArgs = newArgs.concat(args)
+    if (this instanceof fn) {
+      target.apply(this, finalArgs)
+    } else {
+      target.apply(context, finalArgs)
+    }
+  }
+}
+```
+
+到了这里，代码其实和 MDN 里的 polyfill 差不多了，代码见[链接](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Function/bind#Compatibility)
+
+## 已经完美？
+
+当我们认为这份代码已经完美时，这时应该看看 [es5-shim 对 bind 的实现](https://github.com/es-shims/es5-shim/blob/master/es5-shim.js#L201)。搭配这篇博客[《从一道面试题的进阶，到"我可能看了假源码"（2）》](https://exp-team.github.io/blog/2017/02/20/js/es5-shim-bind/)一起看效果更佳哦~
+
+---
+
+## 参考
+
+- [深入学习JavaScript之一：bind函数的实现](https://github.com/shhdgit/blogs/issues/1)
+- [从一道面试题的进阶，到"我可能看了假源码](https://exp-team.github.io/blog/2017/02/20/js/bind/)

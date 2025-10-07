@@ -1,0 +1,367 @@
+{/* ---
+title: 面向应届生的前端面试知识点梳理
+date: 2019-09-12
+spoiler: 供自己以及希望从事前端工作的同学食用
+--- */}
+
+export const metadata = {
+  title: '面向应届生的前端面试知识点梳理',
+  alternates: {
+    canonical: '/n/2019/js-interview',
+  },
+}
+
+# 面向应届生的前端面试知识点梳理
+
+## 开始之前
+
+这篇内容采集于2018年秋招的牛客网前端面经，前端技术更替较快，文中部分内容可能已经过时。
+
+我将收集来的知识点进行了相应的分类，包括 HTML、CSS、JavaScript、计算机网络、数据结构与算法、前端框架等模块。
+
+前端知识的学习并非一蹴而就，源于自己对前端的喜爱并在平时不断地积累。个人不赞成通过背面经临阵磨枪成为面霸拿到大厂 offer。本文罗列的知识点是供自己巩固基础、查漏补缺的清单，希望在复习前端准备面试的过程中自己有所提升，少一分应试多一分沉淀，这是留下该清单的初衷。
+
+## JavaScript
+
+1. [正则表达式](http://deerchao.net/tutorials/regex/regex.htm)
+
+2. 闭包
+   - 闭包是指那些能够访问自由变量的函数（MDN）
+   - [原理](https://github.com/mqyqingfeng/Blog/issues/9)
+   - [面试题](https://zhuanlan.zhihu.com/p/25407758)
+
+3. 原型链
+   - [原型到原型链](https://github.com/mqyqingfeng/Blog/issues/2)
+   - [原型继承](https://github.com/mqyqingfeng/Blog/issues/16)
+   - ![原型链图解](/static/images/js-interview/js_prototype.jpg)
+   - [why-foo-tostring-is-not-the-same-as-tostring.callfoo](https://stackoverflow.com/questions/8692961/why-foo-tostring-is-not-the-same-as-tostring-callfoo)
+
+
+4. DOM API
+   - createElement, removeChild, replaceChild, getElementById | getElementsByName | getElementsByTagName | getElementsByClassName | querySelector | querySelectorsAll
+   - children, childElementCount, firstElementChild, lastElementChild, nextElementSibling, previousElementSibling
+   - childNodes, childNodes.length, firstChild, lastChild, nextSibling, previousSibling
+   - [what-is-the-difference-between-children-and-childnodes-in-javascript](https://stackoverflow.com/questions/7935689/what-is-the-difference-between-children-and-childnodes-in-javascript)
+
+5. `new` 操作符
+   - [MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/new)
+   - When the code `new Foo(...)` is executed, the following things happen:
+      1. A new object is created, inheriting from `Foo.prototype`.
+      2. The constructor function `Foo` is called with the specified arguments, and with `this` bound to the newly created object. `new Foo` is equivalent to `new Foo()`, i.e. if no argument list is specified, `Foo` is called without arguments.
+      3. The object (not null, false, 3.1415 or other primitive types) returned by the constructor function becomes the result of the whole `new` expression. If the constructor function doesn't explicitly return an object, the object created in step 1 is used instead. (Normally constructors don't return a value, but they can choose to do so if they want to override the normal object creation process.)
+
+6. 实现深克隆
+
+```js
+function clone(obj) {
+  if (obj === null || typeof (obj) !== 'object' || 'isActiveClone' in obj) {
+    return obj;
+  }
+
+  if (obj instanceof Date) {
+    var temp = new obj.constructor(); //or new Date(obj);
+  } else {
+    var temp = obj.constructor();
+  }
+
+  for (var key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      obj['isActiveClone'] = null;
+      temp[key] = clone(obj[key]);
+      delete obj['isActiveClone'];
+    }
+  }
+  return temp;
+}
+```
+
+7. this
+   - 参考《You Don't Know JS》
+   - `this` 是在函数被调用时绑定的，它的指向取决于函数的调用方式
+   - 优先级：`new` 绑定 > 显式绑定 > 隐式绑定 > 默认绑定
+
+8. 垃圾回收
+   - [内存管理](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Memory_Management)
+   - **引用计数**的缺点是无法处理循环引用，**标记-清除**算法解决了这个问题，现代浏览器的垃圾回收算法都是基于**标记-清除**
+
+9. [数组去重](https://github.com/mqyqingfeng/Blog/issues/27)
+
+10. `Array.prototype.sort()` 底层排序方式
+    - **Quicksort** is generally considered to be efficient and fast and so is used by V8 as the implementation for `Array.prototype.sort()` on arrays with more than 23 items. For less than 23 items, V8 uses **insertion sort**. **Merge sort** is a competitor of quicksort as it is also efficient and fast but has the added benefit of being stable. This is why Mozilla and Safari use it for their implementation of `Array.prototype.sort()`.
+    - [javascript Array.prototype.sort 排序浅谈](https://imweb.io/topic/565cf7253ad940357eb99881)
+
+11. Fetch API
+    - `response` 是流对象：`fetch(url).then(res => res.json())`
+    - 只会在只会在网络错误的情况下（比如 IP 地址无法解析，服务器不可访问或是不允许 CORS）reject 这个 promise。404或500时不会
+    - 默认不带 cookie，默认不开 CORS，需要添加配置项
+    - [使用 AbortController 取消请求](https://stackoverflow.com/questions/31061838/how-do-i-cancel-an-http-fetch-request)
+    - [不支持进度](https://stackoverflow.com/questions/35711724/upload-progress-indicators-for-fetch)
+
+12. ES2018
+    - [Exploring ES2018 and ES2019](http://exploringjs.com/es2018-es2019/toc.html)
+    - [[译] ES2018（ES9）的新特性](https://juejin.im/post/5b2a186cf265da596d04a648)
+
+13. Promise
+    - [promise + xhr](https://stackoverflow.com/questions/30008114/how-do-i-promisify-native-xhr)
+    - [手写 Promise](https://gist.github.com/zerosrat/9cd6eaf5889ee87ead22a514921a094a)
+
+14. 防抖与节流
+    - [防抖](https://github.com/mqyqingfeng/Blog/issues/22)
+    - [节流](https://github.com/mqyqingfeng/Blog/issues/26)
+    - [我的实现](https://gist.github.com/zerosrat/9c0549cd34d4a44c5d2e3e769efc09e7)
+
+## CSS
+
+1. [伪类和伪元素](http://www.alloyteam.com/2016/05/summary-of-pseudo-classes-and-pseudo-elements/)
+
+2. 选择器优先级
+   - 内联样式 1,0,0,0
+   - ID 0,1,0,0
+   - 类、属性选择、伪类 0,0,1,0
+   - 元素、伪元素 0,0,0,1
+   - 结合符（>,+）、通配选择器 0,0,0,0
+   - 继承的值没有特殊性，会被上面的覆盖
+   - 读者重要 > 代码重要 > 代码正常 > 读者正常 > 用户代理
+   - LVHA
+
+3. position 四种定位以及区别
+    - [mdn](https://developer.mozilla.org/en-US/docs/Web/CSS/position)
+
+4. 盒子模型
+   - box-sizing: content-box;
+   - box-sizing: border-box;
+   - 见《精通CSS》
+
+5. 两栏布局
+   - 若左固定宽度：float + margin; margin + float
+   - 若左不定宽度：float + float; float + BFC; flex
+
+6. [BFC](https://juejin.im/post/59b73d5bf265da064618731d)
+   - 可以用来清除浮动
+   - 可以用来避免外边距合并
+   - 可以用于两栏布局
+   - [这是个 demo](http://www.cnblogs.com/xiaohuochai/p/5248536.html)
+
+7. [clearfix](https://www.w3cplus.com/css/clear-float)
+   - 创建一个额外的 `clear: both` 元素
+   - BFC
+   - 伪元素实现，思路同1
+
+8. [外边距合并 margin collapsing](https://segmentfault.com/a/1190000010346113)
+   - 相邻元素之间
+   - 父元素与其第一个或最后一个子元素之间
+   - 空的块级元素
+
+10. [三栏布局](https://zhuanlan.zhihu.com/p/25070186)
+
+11. 行内元素和块元素区别
+    - [block, inline和inline-block概念和区别](https://www.cnblogs.com/KeithWang/p/3139517.html)
+
+12. [适配问题（媒体轮询，rem）](https://imweb.io/topic/5a523cc0a192c3b460fce3a5)
+
+13. [动画](http://www.w3school.com.cn/css3/css3_animation.asp)
+
+14. 重排和重绘
+    - 参考《高性能JavaScript》P50
+    - 重排发生于 DOM 元素的增删；元素尺寸或位置的改变；浏览器窗口尺寸的改变
+    - 重绘发生于元素可视化属性的改变
+    - 批量修改 DOM 以避免多次重排：隐藏，修改，显示；`document.createDocumentFragment()`；拷贝需要修改的元素并修改副本，然后替换原元素
+    - 绝对定位让动画元素脱离文档流
+
+15. [可替换元素](https://developer.mozilla.org/en-US/docs/Web/CSS/Replaced_element)
+
+16. 水平、垂直居中
+    - [CSS实现水平垂直居中的1010种方式](https://yanhaijing.com/css/2018/01/17/horizontal-vertical-center/)
+    - [如何居中一个元素（终结版）](https://segmentfault.com/a/1190000016675252)
+
+17. [calc](https://developer.mozilla.org/en-US/docs/Web/CSS/calc)
+
+18. vertical-align
+    - [Vertical-Align: All You Need To Know](https://www.zcfy.cc/article/vertical-align-all-you-need-to-know)
+    - [mdn](https://developer.mozilla.org/zh-CN/docs/Web/CSS/vertical-align)
+
+19. `opacity: 0;` vs `visibility: hidden;` vs ` display: none;`
+    - [stackoverflow](https://stackoverflow.com/questions/272360/does-opacity0-have-exactly-the-same-effect-as-visibilityhidden/273076#273076)
+
+20. z-index
+    - [stack context](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Positioning/Understanding_z_index/The_stacking_context)
+    - [CSS3 Transform 引起的 z-index "失效"](https://segmentfault.com/q/1010000002480824?_ea=4187896)
+
+## HTML
+
+1. 冒泡、捕获
+   - 详见红宝书第13章事件
+   - `e.target` is what triggers the event dispatcher to trigger and `e.currentTarget` is what you assigned your listener to.
+
+2. [HTML的语义化](https://segmentfault.com/a/1190000002695791)
+
+3. web worker
+   - 应对计算密集型场景
+
+4. SPA的SEO怎么优化
+   - `<meta name="keywords">`, `<meta name="description">`, `<title>`
+   - sitemap
+   - SSR
+
+5. [window.requestAnimationFrame](https://juejin.im/post/5a82f0626fb9a06358657c9c)
+
+6. defer, async
+   - [defer和async的区别](https://segmentfault.com/q/1010000000640869)
+   - 当初始的 HTML 文档被完全加载和解析完成之后，`DOMContentLoaded` 事件被触发，而无需等待样式表、图像和子框架的完成加载。另一个不同的事件 `load` 应该仅用于检测一个完全加载的页面。
+
+6. [谈谈移动端的click300ms延迟和点透问题](https://zhuanlan.zhihu.com/p/26351643)
+
+7. event loop
+   - [Tasks, microtasks, queues and schedules](https://jakearchibald.com/2015/tasks-microtasks-queues-and-schedules/)
+   - [浏览器和NodeJS中不同的Event Loop](https://github.com/kaola-fed/blog/issues/234)
+
+8. [跨页面通信](https://juejin.im/post/59bb7080518825396f4f5177)
+
+## Web
+
+1. CSRF
+   - [前端安全系列之二：如何防止CSRF攻击？](https://juejin.im/post/5bc009996fb9a05d0a055192)
+
+2. XSS
+   - [前端安全系列（一）：如何防止XSS攻击？](https://juejin.im/post/5bad9140e51d450e935c6d64)
+
+3. web缓存机制
+   - [一文读懂前端缓存](https://zhuanlan.zhihu.com/p/44789005)
+   - [上文备份](https://github.com/easonyq/easonyq.github.io/blob/master/%E5%AD%A6%E4%B9%A0%E8%AE%B0%E5%BD%95/others/cache.md)
+
+4. Websocket
+   - [MDN](https://developer.mozilla.org/zh-CN/docs/Web/API/WebSocket)
+   - 握手（HTTP）+数据传输，详见《深入浅出nodejs》p164
+
+5. 跨域
+   - [浏览器的同源策略](https://developer.mozilla.org/zh-CN/docs/Web/Security/Same-origin_policy)
+   - [跨域资源共享 CORS 详解](http://www.ruanyifeng.com/blog/2016/04/cors.html)
+
+6. 输入一个网址到显示的总过程
+   - [在浏览器地址栏输入一个URL后回车，背后会进行哪些技术步骤？](https://www.zhihu.com/question/34873227)
+   - 浏览器细节参考《现代前端技术解析》p10
+   - 计网细节参考《网络是怎样连接的》
+   - [DOM CSSOM](https://developers.google.com/web/fundamentals/performance/critical-rendering-path/constructing-the-object-model)
+   - [渲染树构建、布局及绘制](https://developers.google.com/web/fundamentals/performance/critical-rendering-path/render-tree-construction)
+
+7. [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive)
+
+8. [点击劫持](https://www.jianshu.com/p/251704d8ff18)
+
+## 常用设计模式
+
+`todo`
+
+## 前端框架
+
+### React
+
+参考《深入react技术栈》
+
+1. [virtual dom](https://github.com/livoras/blog/issues/13)
+
+2. Dom diff
+    1. 生成 js dom
+    2. 对新旧树进行深度优先遍历并记录
+    3. 基于策略:
+        - DOM节点跨层级移动少
+        - 相同组件会生成相似的树形结构
+        - 同层级子节点用 key 进行区别
+    4. 判断树节点是否相同
+    5. 判断列表，lastIndex记录访问过的节点在旧集合中最右的位置。（移动，删除，新增）
+    6. 对DOM树进行深度优先遍历，apply patch
+
+3. 生命周期
+   - [react-component](https://reactjs.org/docs/react-component.html)
+   - [react-lifecycle-methods-diagram](http://projects.wojtekmaj.pl/react-lifecycle-methods-diagram)
+   - [How can we fetch data async in reaction to props changes with getDerivedStateFromProps?](https://github.com/reactjs/rfcs/issues/26#issuecomment-365744134)
+   - [关于React v16.3 新生命周期](https://juejin.im/post/5aca20c96fb9a028d700e1ce)
+
+### Vue
+
+1. [生命周期](https://vuejs.org/v2/guide/instance.html?#Lifecycle-Diagram)
+
+2. 双向绑定
+   - 观察者模式
+   - `Object.defineProperty()` or `Proxy`
+   - [实现](https://jsfiddle.net/zerosrat/8xa6tf3r/)
+
+3. [vue源码解读](http://hcysun.me/vue-design/zh/)
+
+### webpack
+
+1. [原理](https://zhuanlan.zhihu.com/p/58151131)
+
+### babel
+
+1. [编写插件](https://github.com/jamiebuilds/babel-handbook/blob/master/translations/zh-Hans/plugin-handbook.md)
+
+## 计算机网络
+
+1. DNS
+   - [全方位认识DNS](https://selfboot.cn/2015/11/05/dns_theory/)
+   - [DNS递归/迭代](https://blog.csdn.net/lycb_gz/article/details/11720247)
+   - [什么情况下DNS会使用TCP传输协议？](https://ephen.me/2017/dns_tcp/)
+
+2. TCP
+   - [三握四断](https://github.com/jawil/blog/issues/14)
+   - [为什么TCP4次挥手时等待为2MSL](https://www.zhihu.com/question/67013338)
+   - [拥塞控制](https://zh.wikipedia.org/wiki/TCP%E6%8B%A5%E5%A1%9E%E6%8E%A7%E5%88%B6)：先慢启动，拥塞窗口指数增长直至超时，这时设置慢启动阈值为超时时窗口大小的一半；下次慢启动到阈值之后，窗口线型增长直至超时；重复第二步。
+   - [超时重传](https://baike.baidu.com/item/TCP%E8%B6%85%E6%97%B6%E9%87%8D%E4%BC%A0%E6%9C%BA%E5%88%B6)
+   - 可靠机制：序号+确认号
+   - 滑动窗口
+   - 对 MSS 进行拆分
+
+3. UDP
+   - 无连接
+   - 不可靠（不保证有序，不保证无丢失）
+   - 高效
+
+4. HTTPS
+   - [基于TLS的混合加密+CA](https://juejin.im/entry/5976d147f265da6c2d2cad1c)
+   - [TLS1.2 握手](https://www.jianshu.com/p/7158568e4867) （《图解http》也有讲）
+
+5. HTTP/2
+   - [google developers](https://developers.google.com/web/fundamentals/performance/http2/?hl=zh-cn)
+   - 基于应用层与传输层之间的二进制分帧
+   - 多路复用（解决 [HTTP队头阻塞](https://liudanking.com/arch/what-is-head-of-line-blocking-http2-quic/)）
+   - 并行双向字节流
+   - 首部压缩
+   - 服务端推送
+
+6. HTTP/3
+   - [HTTP/3详解](https://http3-explained.haxx.se/zh/)
+
+7. [HTTP Status Codes](https://www.restapitutorial.com/httpstatuscodes.html)
+
+## 数据结构及算法
+
+参考 [javascript-algorithms](https://github.com/trekhleb/javascript-algorithms)
+
+### 排序
+
+[排序算法](https://zh.wikipedia.org/wiki/%E6%8E%92%E5%BA%8F%E7%AE%97%E6%B3%95)
+
+[我的实现js版](https://gist.github.com/zerosrat/d648a8f2510f0a7928ede43f1c223308)
+
+1. quick sort
+   - [阮老师讲解](http://www.ruanyifeng.com/blog/2011/04/quicksort_in_javascript.html)
+      1. 在数据集之中，选择一个元素作为"基准"（pivot）。
+      2. 所有小于"基准"的元素，都移到"基准"的左边；所有大于"基准"的元素，都移到"基准"的右边。
+      3. 对"基准"左边和右边的两个子集，不断重复第一步和第二步，直到所有子集只剩下一个元素为止。
+
+2. merge sort
+3. insertion, selection sort
+4. bubble sort
+5. heap sort
+
+### leetcode 刷题
+
+1. 贪心算法
+2. 动态规划
+3. 回溯
+
+## 参考
+
+1. [前端面试之道](https://juejin.im/book/5bdc715fe51d454e755f75ef)
+2. [写给前端面试者](https://github.com/amfe/article/issues/5)

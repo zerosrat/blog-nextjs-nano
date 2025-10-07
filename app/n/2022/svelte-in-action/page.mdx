@@ -1,0 +1,217 @@
+{/* ---
+title: Svelte in Action
+date: 2022-10-07 20:44:51
+description: Vue/React 都采用了虚拟DOM 技术，这其实是一种运行时方案，而 Svelte 则是轻运行时的。
+--- */}
+
+## 轻运行时原理分析
+
+### 示例代码
+
+``` ts
+// https://svelte.dev/examples/reactive-declarations
+<script>
+  let count = 1;
+
+  // the `$:` means 're-run whenever these values change'
+  $: doubled = count * 2;
+  $: quadrupled = doubled * 2;
+
+  function handleClick() {
+    count += 1;
+  }
+</script>
+
+<button on:click={handleClick}>
+  Count: {count}
+</button>
+
+<p>{count} * 2 = {doubled}</p>
+<p>{doubled} * 2 = {quadrupled}</p>
+```
+
+响应式更新流程：
+
+![update-flow](/static/images/svelte-in-action/update-flow.jpeg)
+
+### 源码解析之编译产物
+
+```ts
+// JS output
+class App extends SvelteComponent {
+  constructor(options) {
+    super();
+    // 编译后的结果中，有两个重要方法：create_fragement 和 instance
+    init(this, options, instance, create_fragment, safe_not_equal, {});
+  }
+}
+
+function create_fragment(ctx) {
+  // declare dom var
+  return {
+    c() {
+     // create
+    },
+    m(target, anchor) {
+      // mount
+    },
+    p(ctx, [dirty]) {
+      // update
+      if (dirty & /*count*/ 1) set_data(t1, /*count*/ ctx[0]);
+      if (dirty & /*count*/ 1) set_data(t3, /*count*/ ctx[0]);
+      if (dirty & /*doubled*/ 2) set_data(t5, /*doubled*/ ctx[1]);
+      if (dirty & /*doubled*/ 2) set_data(t7, /*doubled*/ ctx[1]);
+      if (dirty & /*quadrupled*/ 4) set_data(t9, /*quadrupled*/ ctx[2]);
+    },
+    i: noop,
+    o: noop,
+    d(detaching) {
+      // detach
+    }
+  };
+}
+
+function instance($$self, $$props, $$invalidate) {
+  let doubled;
+  let quadrupled;
+  let count = 1;
+
+  function handleClick() {
+    $$invalidate(0, count += 1);
+  }
+
+  $$self.$$.update = () => {
+    if ($$self.$$.dirty & /*count*/ 1) {
+      // the `$:` means 're-run whenever these values change'
+      $: $$invalidate(1, doubled = count * 2);
+    }
+
+    if ($$self.$$.dirty & /*doubled*/ 2) {
+      $: $$invalidate(2, quadrupled = doubled * 2);
+    }
+  };
+
+  return [count, doubled, quadrupled, handleClick];
+}
+```
+
+dirty 是 32 位二进制的数组，其中不解构进行或运算的结果如下：
+
+```
+// [0b0001] & 1
+// 1
+// [0b0001] & 2
+// 0
+// [0b0010] & 1
+// 0
+// [0b0010] & 2
+// 1
+```
+
+### 源码解析之脏检查
+
+```ts
+// Component.ts
+const invalidate = (i, ret, ...rest) => {
+  const value = rest.length ? rest[0] : ret;
+  if ($$.ctx && not_equal($$.ctx[i], $$.ctx[i] = value)) {
+    if (!$$.skip_bound && $$.bound[i]) $$.bound[i](value);
+    if (ready) make_dirty(component, i);
+  }
+  return ret;
+}
+
+function make_dirty(component, i) {
+  // 当 dirty 第 0 项为 -1 时，表示这个组件当前是干净的
+  if (component.$$.dirty[0] === -1) {
+    dirty_components.push(component);
+    schedule_update();
+    component.$$.dirty.fill(0);
+  }
+  // dirty 是 32 位二进制的数组
+  // 先定位到 dirty 的第 n 个元素
+  // 再取余定位到第 m 位将这位标记为脏
+  component.$$.dirty[(i / 31) | 0] |= (1 << (i % 31));
+}
+```
+
+## 体积和性能分析
+
+### 产物体积
+
+svelte 由于在编译时将组件直接解释为 js，所以相对来说组件编译后的代码量会比 vue 和 react 编译后要大一些。基于真实的 todomvc 场景构建组件，编译以后 Svelte 的组件输出大小是 Vue 的 1.7 倍，在 SSR 的情况下，这一比例会上升到 2.1 倍。在不开启 SSR 的情况下，大概 19 个组件（一个组件 100 行代码）后就会抹平运行时体积的大小差异，开启 SSR 的情况下，大概 13 个组件后就会抹平差异。
+
+![output-size-compare](/static/images/svelte-in-action/output-size-compare.png)
+
+react 和 vue 都是基于运行时的框架，打包后除了用户自己编写的代码之外，还有框架本身的 runtime。而 svelte 是通过静态编译减少框架运行时的代码量，但后者也是用 runtime 的，只是 runtime 远小于前者。如下图，react、vue 和 svelte 的 minzipped 体积分别为：45.4kb、34.3kb 和 1.7kb。
+
+![minzipped-size](/static/images/svelte-in-action/minzipped-size.png)
+
+假如有 n 个组件，svelte 每个组件编译后个大小系数为 a，运行时大小为 RT1，vue 或者 react 每个组件编译后的规模为 b，运行时大小为 RT2:
+
+- svelte：体积 = RT1 + a *n
+- vue/react：体积 = RT2 + b* n （S为框架运行时的体积）
+
+其中 a > b 且 RT1 < RT2，随着 n 的数量的增多，svelte 项目在体积上并不会占据太大的优势。拟合函数如下图：
+
+![source-bundle-size](/static/images/svelte-in-action/source-bundle-size.png)
+
+
+### 性能分析
+
+基准测试实验：https://github.com/krausest/js-framework-benchmark
+
+测试代码在：https://github.com/krausest/js-framework-benchmark/blob/master/frameworks/keyed/react-hooks/src/main.jsx
+
+运行时性能指标：
+
+![metrics-duration](/static/images/svelte-in-action/metrics-duration.png)
+
+启动性能指标：
+
+![metrics-starup](/static/images/svelte-in-action/metrics-starup.png)
+
+内存指标：
+
+![metrics-memory](/static/images/svelte-in-action/metrics-memory.png)
+
+结论：svelte 不依赖 virtual dom，在 1000 行列表的场景的表现都是由于 react 和 vue 的
+
+## 业务应用场景
+
+### 图表需求
+
+视觉稿如下图：
+
+![battle-chart](/static/images/svelte-in-action/battle-chart.png)
+
+应用依赖：svelte + echarts + web-core（项目组维护），分别用于响应式 UI 编写、图表绘制、数据上报。bundle 分析如下图：
+
+![bundle-analysis](/static/images/svelte-in-action/bundle-analysis.png)
+
+经过分析，该应用产物的第三方依赖是 echarts (67.7%) 和 web-core (29.9%) 共近 98%，而 svelte (0.48%) 和组件代码 (1.9%) 共近 2%。主要依赖除了必须不可的 echarts，还有存在优化空间的 web-core 库。而 svelte 和组件代码的大小是很令人满意的。
+
+### Web Components
+
+## 生态
+
+twitter 账号关注数量：
+
+![twitter-react](/static/images/svelte-in-action/twitter-react.png)
+
+![twitter-svelte](/static/images/svelte-in-action/twitter-svelte.png)
+
+github 相关生态：
+
+![github-react](/static/images/svelte-in-action/github-react.png)
+
+![github-svelte](/static/images/svelte-in-action/github-svelte.png)
+
+## 参考
+
+1. https://www.zhihu.com/question/53150351
+2. https://www.zhihu.com/question/460278146
+3. https://javascript.plainenglish.io/javascript-frameworks-performance-comparison-2020-cd881ac21fce
+4. https://www.teqng.com/2022/02/20/svelte-%E5%8E%9F%E7%90%86%E6%B5%85%E6%9E%90%E4%B8%8E%E8%AF%84%E6%B5%8B/
+5. https://github.com/halfnelson/svelte-it-will-scale/blob/master/README.md
+6. https://github.com/yyx990803/vue-svelte-size-analysis
