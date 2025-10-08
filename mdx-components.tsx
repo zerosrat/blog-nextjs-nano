@@ -8,6 +8,11 @@ type ListProps = ComponentPropsWithoutRef<'ul'>
 type ListItemProps = ComponentPropsWithoutRef<'li'>
 type AnchorProps = ComponentPropsWithoutRef<'a'>
 type BlockquoteProps = ComponentPropsWithoutRef<'blockquote'>
+type TableProps = ComponentPropsWithoutRef<'table'>
+type TheadProps = ComponentPropsWithoutRef<'thead'>
+type TbodyProps = ComponentPropsWithoutRef<'tbody'>
+type ThProps = ComponentPropsWithoutRef<'th'>
+type TdProps = ComponentPropsWithoutRef<'td'>
 
 // 样式配置对象，便于维护
 const mdxStyles = {
@@ -87,6 +92,11 @@ const components = {
     </table>
   ),
   blockquote: (props: BlockquoteProps) => <blockquote className={mdxStyles.blockquote} {...props} />,
+  table: (props: TableProps) => <table className={mdxStyles.table} {...props} />,
+  thead: (props: TheadProps) => <thead {...props} />,
+  tbody: (props: TbodyProps) => <tbody {...props} />,
+  th: (props: ThProps) => <th className={mdxStyles.th} {...props} />,
+  td: (props: TdProps) => <td className={mdxStyles.td} {...props} />,
 }
 
 declare global {

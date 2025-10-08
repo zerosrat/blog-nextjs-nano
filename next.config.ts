@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next'
 import createMDX from '@next/mdx'
 import postgres from 'postgres'
+import remarkGfm from 'remark-gfm'
 
 export const sql = postgres(process.env.POSTGRES_URL!, {
   ssl: 'allow',
@@ -27,11 +28,16 @@ const nextConfig: NextConfig = {
   // Note: Using the Rust compiler means we cannot use
   // rehype or remark plugins. If you need them, remove
   // the `experimental.mdxRs` flag.
-  experimental: {
-    mdxRs: true,
-  },
+  // experimental: {
+  //   mdxRs: true,
+  // },
 }
 
-const withMDX = createMDX({})
+const withMDX = createMDX({
+  options: {
+    remarkPlugins: [remarkGfm],
+    rehypePlugins: [],
+  }
+})
 
 export default withMDX(nextConfig)
