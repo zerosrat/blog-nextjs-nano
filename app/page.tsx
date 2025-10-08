@@ -41,8 +41,9 @@ export default async function HomePage() {
               {yearPosts.map((post) => (
                 <li key={post.href} className={mdxStyles.li}>
                   <a href={post.href} className={mdxStyles.link}>
-                    {formatDate(post.date)} · {post.title}
+                    {post.title}
                   </a>
+                  <span className="text-gray-500 dark:text-gray-400"> · {formatDate(post.date)}</span>
                 </li>
               ))}
             </ul>
