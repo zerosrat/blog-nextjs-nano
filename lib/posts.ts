@@ -3,8 +3,9 @@ import path from 'path'
 
 export interface PostMetadata {
   title: string
-  date: string
+  date: string // YYYY-MM-DD 格式
   description?: string
+  tags?: string[]
   alternates: {
     canonical: string
   }
@@ -22,26 +23,34 @@ export async function getAllPosts(): Promise<Post[]> {
 
   try {
     // 获取所有年份目录
-    const years = fs.readdirSync(postsDirectory, { withFileTypes: true })
-      .filter(dirent => dirent.isDirectory())
-      .map(dirent => dirent.name)
-      .filter(name => /^\d{4}$/.test(name)) // 只匹配四位数字的年份
+    const years = fs
+      .readdirSync(postsDirectory, { withFileTypes: true })
+      .filter((dirent) => dirent.isDirectory())
+      .map((dirent) => dirent.name)
+      .filter((name) => /^\d{4}$/.test(name)) // 只匹配四位数字的年份
 
     for (const year of years) {
       const yearPath = path.join(postsDirectory, year)
 
       try {
         // 获取该年份下的所有文章目录
-        const articles = fs.readdirSync(yearPath, { withFileTypes: true })
-          .filter(dirent => dirent.isDirectory())
-          .map(dirent => dirent.name)
+        const articles = fs
+          .readdirSync(yearPath, { withFileTypes: true })
+          .filter((dirent) => dirent.isDirectory())
+          .map((dirent) => dirent.name)
 
         for (const article of articles) {
-          const articlePath = `/app/n/${year}/${article}/page.mdx`
-
           try {
-            // 动态导入文章的 metadata
-            const { metadata } = await import(`../app/n/${year}/${article}/page.mdx`)
+            // 先尝试 content.mdx (新结构)，失败则尝试 page.mdx (旧结构)
+            let metadata
+            let articlePath
+            try {
+              metadata = (await import(`../app/n/${year}/${article}/content.mdx`)).metadata
+              articlePath = `/app/n/${year}/${article}/content.mdx`
+            } catch {
+              metadata = (await import(`../app/n/${year}/${article}/page.mdx`)).metadata
+              articlePath = `/app/n/${year}/${article}/page.mdx`
+            }
 
             if (metadata && metadata.title && metadata.date) {
               posts.push({
@@ -52,7 +61,7 @@ export async function getAllPosts(): Promise<Post[]> {
               })
             }
           } catch (error) {
-            console.warn(`Failed to import metadata from ${articlePath}:`, error)
+            console.warn(`Failed to import metadata from ${year}/${article}:`, error)
           }
         }
       } catch (error) {
@@ -62,7 +71,6 @@ export async function getAllPosts(): Promise<Post[]> {
 
     // 按日期降序排序（最新的在前）
     return posts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-
   } catch (error) {
     console.error('Failed to scan posts directory:', error)
     return []
@@ -88,5 +96,60 @@ export function formatDate(dateString: string): string {
   } catch (error) {
     console.warn(`Invalid date format: ${dateString}`)
     return dateString
+  }
+}
+
+export function formatDateFull(dateString: string): string {
+  try {
+    const date = new Date(dateString)
+    return date
+      .toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+      .replace(/\//g, '-')
+  } catch (error) {
+    console.warn(`Invalid date format: ${dateString}`)
+    return dateString
+  }
+}
+
+export function formatDateReadable(dateString: string): string {
+  try {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+  } catch (error) {
+    console.warn(`Invalid date format: ${dateString}`)
+    return dateString
+  }
+}
+
+export async function getPostBySlug(year: string, slug: string): Promise<Post | null> {
+  try {
+    // 先尝试 content.mdx (新结构)，失败则尝试 page.mdx (旧结构)
+    let metadata
+    try {
+      metadata = (await import(`../app/n/${year}/${slug}/content.mdx`)).metadata
+    } catch {
+      metadata = (await import(`../app/n/${year}/${slug}/page.mdx`)).metadata
+    }
+
+    if (metadata && metadata.title && metadata.date) {
+      return {
+        ...metadata,
+        href: `/n/${year}/${slug}`,
+        year: parseInt(year),
+        slug,
+      }
+    }
+    return null
+  } catch (error) {
+    console.warn(`Failed to import metadata from /n/${year}/${slug}:`, error)
+    return null
   }
 }
