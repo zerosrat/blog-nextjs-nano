@@ -5,7 +5,7 @@ import { TocItem, UseTocHighlightOptions } from './types'
 
 export function useTocHighlight(toc: TocItem[], options: UseTocHighlightOptions = {}) {
   const [activeId, setActiveId] = useState<string>('')
-  const { rootMargin = '-10% 0% -80% 0%', threshold = 0.1 } = options
+  const { rootMargin = '0% 0% -80% 0%', threshold = 0.1 } = options
 
   // 从 TOC 中提取所有的锚点 ID
   const getAllIds = useCallback((items: TocItem[]): string[] => {
