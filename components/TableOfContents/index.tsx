@@ -38,9 +38,9 @@ export function TableOfContents({ className = '' }: Omit<TableOfContentsProps, '
       aria-label="Table of contents"
     >
       <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3 pb-2 border-b border-gray-200 dark:border-gray-700">
+        {/* <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3 pb-2 border-b border-gray-200 dark:border-gray-700">
           Contents
-        </h3>
+        </h3> */}
         <ul className="space-y-1">
           {toc.map((item, index) => (
             <TocItem

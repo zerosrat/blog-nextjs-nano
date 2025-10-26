@@ -17,8 +17,8 @@ type TdProps = ComponentPropsWithoutRef<'td'>
 // 样式配置对象，便于维护
 const mdxStyles = {
   h1: 'text-gray-900 dark:text-zinc-100 font-extrabold text-4xl mt-0 mb-4',
-  h2: 'text-gray-900 dark:text-zinc-100 font-bold text-2xl mt-8 mb-4',
-  h3: 'text-gray-900 dark:text-zinc-100 font-semibold text-xl mt-6 mb-2',
+  h2: 'text-gray-900 dark:text-zinc-100 font-bold text-2xl mt-8 mb-4 scroll-mt-8',
+  h3: 'text-gray-900 dark:text-zinc-100 font-semibold text-xl mt-6 mb-2 scroll-mt-6',
   h4: 'text-gray-900 dark:text-zinc-100 font-semibold mt-6 mb-2',
   p: 'text-gray-700 dark:text-zinc-300 leading-relaxed',
   link: 'text-blue-500 hover:text-blue-700 dark:text-blue-400 hover:dark:text-blue-300 underline underline-offset-2 decoration-blue-500/30 hover:decoration-blue-500/60 transition-colors',

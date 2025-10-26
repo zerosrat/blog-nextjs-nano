@@ -26,12 +26,10 @@ export function useTocHighlight(
   const scrollToElement = useCallback((id: string) => {
     const element = document.getElementById(id);
     if (element) {
-      const rect = element.getBoundingClientRect();
-      const scrollTop = window.pageYOffset + rect.top - 100; // 留出100px的顶部空间
-
-      window.scrollTo({
-        top: scrollTop,
-        behavior: 'smooth'
+      // 使用原生 scrollIntoView，配合 CSS scroll-margin-top 处理偏移
+      element.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
       });
 
       // 更新 URL hash，但不触发页面跳转
