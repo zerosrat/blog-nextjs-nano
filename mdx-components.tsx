@@ -20,7 +20,7 @@ const mdxStyles = {
   h2: 'text-gray-900 dark:text-zinc-100 font-bold text-2xl mt-8 mb-4 scroll-mt-8',
   h3: 'text-gray-900 dark:text-zinc-100 font-semibold text-xl mt-6 mb-2 scroll-mt-6',
   h4: 'text-gray-900 dark:text-zinc-100 font-semibold mt-6 mb-2',
-  p: 'text-gray-700 dark:text-zinc-300 leading-relaxed',
+  p: 'text-gray-700 dark:text-zinc-300 leading-relaxed mb-5',
   link: 'text-blue-500 hover:text-blue-700 dark:text-blue-400 hover:dark:text-blue-300 underline underline-offset-2 decoration-blue-500/30 hover:decoration-blue-500/60 transition-colors',
   code: 'bg-gray-100 dark:bg-zinc-800 text-gray-800 dark:text-zinc-200 px-1.5 py-0.5 rounded text-sm font-mono',
   blockquote:
