@@ -18,7 +18,51 @@ export const metadata = {
 
 可见我的职业生涯贯穿了 RN 这个框架，在大量应用实践后也明白了 RN 桥架构的优势和局限，明白了 RN 适合用于什么场景。但是，我还想更进一步探索 RN 的原理，既是满足自己的好奇心，也是给自己的职业生涯的一个回应。
 
-## 桥架构的本质
+## 桥架构通信的本质
+
+虽然现在 RN 已经重构并演进到基于 JSI 的新架构了，但出于学习的目的，我还是从经典的桥架构出发，对 RN 进行最小还原。在搞清楚桥架构的原理后，再进入到新架构的深入学习中。
+
+我们知道，RN 提供了用 React 写 JS 代码渲染 Native 应用的能力，我们前端开发写 RN 应用时最常打交道的就是 JS 代码，而最终运行在 Native 的产物其实也是 JS 代码。在 RN 中 JS 显然不是在端侧的 WebView 运行的，而是在嵌入 JS 引擎中引擎运行的，故而 JS 和端侧通信不是和 WebView 打交道而是需要和 Native 打交道。那么关键问题来了，JS 是怎么和 Native 通信的呢？下面我们以 RN 获取屏幕/视窗尺寸为例，进行说明。
+
+```typescript
+// JS 侧从 Native 提供的模块获取数据
+// 调用关系: JS -> Native
+const windowDimensions = Dimensions.get('window');
+const screenDimensions = Dimensions.get('screen');
+
+const App = () => {
+  const [dimensions, setDimensions] = useState({
+    window: windowDimensions,
+    screen: screenDimensions,
+  });
+
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener(
+      'change',
+      ({window, screen}) => {
+        // Native 尺寸变化通知 JS 侧
+        // 调用关系：Native -> JS
+        setDimensions({window, screen});
+      },
+    );
+    return () => subscription?.remove();
+  });
+  
+  // ...
+}
+```
+
+从代码可以看见，JS 和 Native 的数据流向是**双向的**，JS 既可以调用 Native 模块的方法获取数据，Native 也可以主动推送数据给 JS。刚刚我们有提到，RN 中的 JS 的运行环境是嵌入 JS 引擎，具体的在桥架构版本中的  JS 引擎是 JavaScriptCore (JSC)。Native 用 JSC 加载了 JS 代码，再通过 C++ 桥这个中间层进行双向通信，这套核心代码是用 C++ 编写的，C++ 是一个高性能跨平台语言，用 C++ 来处理和 JSC 的交互以及进行桥实现来在 iOS 和 Android 双端复用是再适合不过了。
+
+回到这节的主题，我们关注的是桥通信，先贴下经典的桥架构图如下所示，大家可能已经在其他地方见到过很多次这张图了。我也会继续使用这张图来说明桥架构通信的本质是什么。
+
+![](/static/images/mini-rn-1/bridge-architecture.awebp)
+
+刚刚有提到 JS 和 Native 的通信是双向的，我们先看看 JS 是如何调用 Native 的，在这里我们其实可以和浏览器进行类比。不同于在浏览器中运行的 JS 其宿主是浏览器，而 RN JS 的运行宿主是嵌入在手机 OS 的 JSC 引擎。就如浏览器给 JS 环境提供了 window 对象及其方法供 JS 调用，嵌入 JS 引擎也是如此，为 JS 环境 注入了 `global` 对象及其方法供 JS 调用，而其中的方法就包含了 `global.nativeCallSyncHook` 这个关键方法（简称 `callSync`）。`callSync` 的入参包含了 JS 需要调用 Native 侧具体什么方法的信息，而每次 JS 侧调用 `callSync` 就可以触发 C++ 侧提前为该方法注册的回调函数，可以理解为 JS 调用该方法时就会把入参输入给 C++ 的对应函数并执行，而这一切是通过 JSC 的 API 做到的。再以之前的用 Native 模块获取尺寸的代码为例，JS 侧调用 `Dimensions.get('window')` 时最终会调用 `flushQueue` 方法，入参包含了模块信息为 `Dimensions`、方法为 `get`、参数为 `'window'`，到 C++ 回调后再交由 C++ 转发给具体模块的实现进行处理。
+
+再看看 Native 是如何通知 JS 数据更新的，还是以之前的 JS 监听了 `Dimension` 模块的 `change` 事件的代码为例，JS 在初始化时在 global 对象上初始化了供 Native 调用的方法，即 `global.__fbBatchedBridge.callFunctionReturnFlushedQueue` 方法。
+
+由此我们可以发现，C++ 环境创建并管理了 JS 环境，既可以为 JS 环境注入全局变量和方法供 JS 调用，也可以主动调用 JS 环境中的方法，该 C++ 环境有着极高的控制权。这也是桥通信的奥秘所在。
 
 ## 任务概览
 
