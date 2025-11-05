@@ -105,3 +105,8 @@ input[type='email'] {
 }
 
 /* 表格样式已移至 mdx-components.tsx */
+
+/* MDX 内容段落间距 - 只应用于直接子元素 */
+.mdx-content > p {
+  margin-bottom: 1.25rem; /* 等同于 Tailwind 的 mb-5 */
+}

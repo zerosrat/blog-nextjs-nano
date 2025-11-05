@@ -20,11 +20,11 @@ const mdxStyles = {
   h2: 'text-gray-900 dark:text-zinc-100 font-bold text-2xl mt-8 mb-4 scroll-mt-8',
   h3: 'text-gray-900 dark:text-zinc-100 font-semibold text-xl mt-6 mb-2 scroll-mt-6',
   h4: 'text-gray-900 dark:text-zinc-100 font-semibold mt-6 mb-2',
-  p: 'text-gray-700 dark:text-zinc-300 leading-relaxed mb-5',
+  p: 'text-gray-700 dark:text-zinc-300 leading-relaxed',
   link: 'text-blue-500 hover:text-blue-700 dark:text-blue-400 hover:dark:text-blue-300 underline underline-offset-2 decoration-blue-500/30 hover:decoration-blue-500/60 transition-colors',
   code: 'bg-gray-100 dark:bg-zinc-800 text-gray-800 dark:text-zinc-200 px-1.5 py-0.5 rounded text-sm font-mono',
   blockquote:
-    'border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-950/20 pl-4 py-2 text-gray-700 dark:text-zinc-300 italic',
+    'border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-950/20 pl-4 py-2 text-gray-700 dark:text-zinc-300 italic my-6',
   table:
     'table w-fit min-w-full max-w-[80ch] whitespace-nowrap text-left border-collapse my-6 mx-auto relative left-1/2 -translate-x-1/2 md:max-w-[100ch] max-md:left-[-1rem] max-md:transform-none max-md:w-[calc(100vw-2rem)] max-md:max-w-[calc(100vw-2rem)] max-md:ml-0 max-md:mr-0',
   th: 'border-b border-gray-300 dark:border-zinc-600 px-3 py-3 font-medium border-r border-gray-200 dark:border-zinc-700 last:border-r-0',
