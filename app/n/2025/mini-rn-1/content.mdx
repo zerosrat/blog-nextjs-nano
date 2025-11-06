@@ -10,7 +10,7 @@ export const metadata = {
 
 开始之前，为啥有这篇文章呢，这是一个自问自答的问题。
 
-我的职业生涯几乎一致在和 RN 打交道。故事开始于读研期间，我做为前端开发和教研室两个后端师兄一起为导师做一个 C 端的项目，受到 React 的生态和 RN 的 Slogn 「write once run anywhere」的感召，我使用了基于 Expo 的 RN 技术栈来完成了 App 项目的开发与上线。
+我的职业生涯几乎一致在和 React Native(RN) 打交道。故事开始于读研期间，我做为前端开发和教研室两个后端师兄一起为导师做一个 C 端的项目，受到 React 的生态和 RN 的 Slogn 「write once run anywhere」的感召，我使用了基于 Expo 的 RN 技术栈来完成了 App 项目的开发与上线。
 
 而找实习时也凭借了 PC 和 App 的 React 技术栈经验得到了前司鹅厂的 offer，实习期间使用了 [Hippy-vue](https://hippyjs.org/#/hippy-vue/introduction)（公司的类 RN 框架，JS 侧使用 Vue 框架）实现了王者营地的战绩详情页。回想起那段实习的日子也是额外的充实，大部分工作时间投入在了 Coding 上，披星戴月下班回家在夜深没人的路上唱着自己喜欢的歌，觉得自己有无限可能。
 
@@ -20,7 +20,7 @@ export const metadata = {
 
 ## 桥架构通信的本质
 
-虽然现在 RN 已经重构并演进到基于 JSI 的新架构了，但出于学习的目的，我还是从经典的桥架构出发，对 RN 进行最小还原。在搞清楚桥架构的原理后，再进入到新架构的深入学习中。
+虽然现在 RN 已经重构并演进到基于 JSI 的[新架构](https://reactnative.dev/architecture/landing-page)了，但出于学习的目的，我还是从经典的**桥架构**出发，对 RN 进行最小还原。在搞清楚桥架构的原理后，再进入到新架构的深入学习中。
 
 我们知道，RN 提供了用 React 写 JS 代码渲染 Native 应用的能力，我们前端开发写 RN 应用时最常打交道的就是 JS 代码，而最终运行在 Native 的产物其实也是 JS 代码。在 RN 中 JS 显然不是在端侧的 WebView 运行的，而是在嵌入 JS 引擎中引擎运行的，故而 JS 和端侧通信不是和 WebView 打交道而是需要和 Native 打交道。那么关键问题来了，JS 是怎么和 Native 通信的呢？下面我们以 RN 获取屏幕/视窗尺寸为例，进行说明。
 
@@ -70,22 +70,139 @@ const App = () => {
 
 > 本项目的桥架构实现参考 react-native@v0.57.8 版本，该版本只包含 Bridge 代码不包含 JSI 代码，便于学习和参考。
 
-在了解完跨语言间是如何相互调用实现通信之后，我们接下来就来看看完整实现 JS ↔ Native 双向通信需要做些什么。
+在了解完跨语言间是如何相互调用实现通信之后，我们接下来就来看看完整实现 **JS ↔ Native** 双向通信需要做些什么。
 
 首先，需要在 C++ 中管理 JS 上下文，这是我们出发的基础中的基础，有了 JS 可运行的环境后，再在 JS 环境中实现消息的发送和接收，实现的载体即是消息队列，然后再完成模块系统，实现一个示例模块的方法调用和消息接收。经历这一连串的路程，我们便实现了刚开始那段代码中 JS ↔ Native 双向调用的能力。
 
+为了轻装上阵，初始阶段只在 macOS 系统中运行该项目。一步一步来，把 macOS 跑通后迁移到 iOS 并不复杂，而支持 Android 端还有一些适配工作需要做，不过受篇幅限制这些工作并不在本阶段完成。
+
 ## C++ 环境集成 JS 引擎
 
-在一切开始之前，我们需要搭建好在 Native OS 中运行 JS 的环境，除此之外，在为 JS 环境注入日志函数，供 JS 输出日志便于调试，这便是第一步需要做的。值得一提的是，JS 的核心规范是 **ECMAScript**，这意味着 `console` 对象并不是 JS 语言本身的一部分，而是由宿主环境（如 Chrome, Node）提供的，单纯的 JSC 引擎并不包含 `console` 对象
+在一切开始之前，我们需要搭建在 macOS 中运行 JS 的环境，除此之外，在为 JS 环境注入日志函数，供 JS 输出日志便于调试，这便是第一步需要做的。值得一提的是，JS 的核心规范是 **ECMAScript**，这意味着 `console` 对象并不是 JS 语言本身的一部分，而是由宿主环境（如 Chrome, Node）提供的，单纯的 JSC 引擎并不包含 `console` 对象。
+
+好的，现在我们开始用 C++ 以及 JavaScriptCore 来管理 JS 上下文。首先，我们把 C++ 的头文件定义好，我摘取了其中两个重要成员变量和两个重要方法如下。C++  的 `.h` 文件用于声明接口，其实和 TypeScript 的 `.d.ts` 文件有着相似的作用。
+
+```c++
+// JSCExecutor.h
+class JSCExecutor {
+ private:
+  /**
+   * JSXXX 都是 JavaScriptCore 的 API，一些是类型（如
+   * JSObjectRef）一些是方法（如 JSGlobalContextCreate） 通过使用
+   * JSXXX，可以用 C++ 调用/管理 JS 引擎，可以理解为跨语言的桥梁和安全句柄
+   * JavaScriptCore API Reference:
+   * https://developer.apple.com/documentation/javascriptcore
+   */
+  // JavaScript 运行环境（全局上下文）
+  JSGlobalContextRef m_context;
+  // JS 运行环境的全局对象 global
+  JSObjectRef m_globalObject;
+ public:
+  /**
+   * 加载并执行 JavaScript 应用代码
+   * @param script JavaScript 代码内容
+   * @param sourceURL 代码来源 URL（用于调试）
+   */
+  void loadApplicationScript(const std::string &script,
+                             const std::string &sourceURL);
+  /**
+   * 向 JavaScript 环境注入全局函数
+   * @param name 函数名称
+   * @param callback Native 回调函数
+   */
+  void installGlobalFunction(const std::string &name,
+                             JSObjectCallAsFunctionCallback callback);
+};
+```
+
+有了 `JSCExecutor.h` 接着我们需要实现 `JSCExecutor.cpp`。我们还是关注关键变量的初始化和关键方法的实现，先对 JS 运行上下文和 `global` 对象进行初始化，代码如下。初始化都是通过了 [JavaScriptCore API](https://developer.apple.com/documentation/javascriptcore) 来完成的。PS：Apple 平台（如 iOS、macOS）的系统内置了 JSC，引用/链接 JSC 库相对于 Android 平台更为便捷，这也是用 JSC 作为 RN JS 引擎的一个优势，即 iOS 只需引用系统内置的 JSC 引擎即可，对包大小友好。
+
+```C++
+// JSCExecutor.cpp
+JSCExecutor::JSCExecutor() : m_context(nullptr), m_globalObject(nullptr) {
+  // 调用 JSC API 初始化 JS 运行上下文
+  m_context = JSGlobalContextCreate(nullptr);
+  if (!m_context) {
+    throw std::runtime_error("Failed to create JavaScript context");
+  }
+  // 获取 global 全局对象
+  m_globalObject = JSContextGetGlobalObject(m_context);
+}
+```
+
+然后再来实现加载 JS 脚本和向 JS 环境注入方法，代码如下。加载 JS 脚本的关键在于用 `JSEvaluateScript` 在 JS 上下文中加载 JS 脚本的字符串，向 JS 环境注入方法关键在于用 `JSObjectSetProperty` 在 JS 上下文的全局变量上设置属性。而这些都是借助 JSC API 实现的。
+
+```c++
+// JSCExecutor.cpp
+void JSCExecutor::loadApplicationScript(const std::string &script,
+                                        const std::string &sourceURL) {
+  // 将 C++ 的字符串转换成 JSC 可识别的字符串类型
+  JSStringRef scriptStr = JSStringCreateWithUTF8CString(script.c_str());
+  JSStringRef sourceURLStr =
+      sourceURL.empty() ? nullptr
+                        : JSStringCreateWithUTF8CString(sourceURL.c_str());
+
+  JSValueRef exception = nullptr;
+  // 核心调用：执行 JS 脚本
+  JSValueRef result = JSEvaluateScript(m_context, scriptStr, nullptr,
+                                       sourceURLStr, 0, &exception);
+
+  if (exception) {
+    handleJSException(exception);
+  }
+
+  // 释放 JSC 字符串占用的内存
+  JSStringRelease(scriptStr);
+  if (sourceURLStr) JSStringRelease(sourceURLStr);
+}
+
+void JSCExecutor::installGlobalFunction(
+    const std::string &name,
+    JSObjectCallAsFunctionCallback callback) {
+  JSStringRef funcName = JSStringCreateWithUTF8CString(name.c_str());
+  // 创建一个 JS 函数对象，并指定它的 C++ 回调函数实现
+  JSObjectRef func =
+      JSObjectMakeFunctionWithCallback(m_context, funcName, callback);
+  // 将刚创建的函数对象挂载到全局对象 global 上
+  JSObjectSetProperty(m_context, m_globalObject, funcName, func,
+                      kJSPropertyAttributeNone, nullptr);
+
+  JSStringRelease(funcName);
+}
+```
+
+然后在 `JSCExecutor` 构造器中调用 `installGlobalFunction` 给 JS 引擎注入 log 方法，供  JS 脚本调用端上方法进行输出日志，便于调试。
+
+实现了 `JSCExecutor.cpp` 后，就可以新建一个测试文件 `test.cpp` 来试试加载并运行 JS 脚本了。经过一番编译运行，可以发现运行测试程序成功输出了 JS 调用并打印的内容，这样就测试成功了。
+
+```C++
+// test.cpp
+int main() {
+  JSCExecutor executor;
+	// C++ 原始字符串字面量语法，支持多行编写字符串
+  std::string bridgeTestScript = R"(
+            if (typeof global.nativeLoggingHook === 'function') {
+                global.nativeLoggingHook('INFO', 'This is a test log from JavaScript');
+                global.nativeLoggingHook('DEBUG', 'Bridge logging is working!');
+            }
+        )";
+
+  executor.loadApplicationScript(bridgeTestScript, "bridge_test.js");
+
+  return 0;
+}
+```
+
+总结一下，这节我们构建了一个可以加载并管理  JS 上下文的 C++ 程序 `JSCExecutor`。有了这一步我们才有了 JS ↔ Native 双向通信的可能。
 
 ## JS 侧桥核心方法实现
+
+
 
 ## Native 模块系统实现
 
 
 
-
-
-参考
+## 参考
 
 [React Native在美团外卖客户端的实践](https://tech.meituan.com/2019/12/19/meituan-mrn-practice.html)
