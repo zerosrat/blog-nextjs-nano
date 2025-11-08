@@ -173,6 +173,34 @@ void JSCExecutor::installGlobalFunction(
 
 然后在 `JSCExecutor` 构造器中调用 `installGlobalFunction` 给 JS 引擎注入 log 方法，供  JS 脚本调用端上方法进行输出日志，便于调试。
 
+```c++
+// JSCExecutor.cpp
+JSCExecutor::JSCExecutor() : m_context(nullptr), m_globalObject(nullptr) {
+  // ...
+  installGlobalFunction(
+      "nativeLoggingHook",
+      [](JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+         size_t argumentCount, const JSValueRef arguments[],
+         JSValueRef *exception) -> JSValueRef {
+        // 获取 JSCExecutor 实例
+        auto *executor = JSCExecutor::getCurrentInstance();
+        
+        if (argumentCount >= 2) {
+          // JS 类型转 C++ 类型
+          std::string levelStr = jsValueToString(level);
+          std::string messageStr = jsValueToString(message);
+          // 使用 C++ 标准输出流
+          std::cout << "[" << levelStr << "] " << messageStr << std::endl;
+        } else {
+          std::cout << "[Bridge] Warning: nativeLoggingHook called with "
+                       "insufficient arguments"
+                    << std::endl;
+        }
+        return JSValueMakeUndefined(ctx);
+      });
+}
+```
+
 实现了 `JSCExecutor.cpp` 后，就可以新建一个测试文件 `test.cpp` 来试试加载并运行 JS 脚本了。经过一番编译运行，可以发现运行测试程序成功输出了 JS 调用并打印的内容，这样就测试成功了。
 
 ```C++
@@ -197,7 +225,125 @@ int main() {
 
 ## JS 侧桥核心方法实现
 
+接下来，进入到 JS 侧桥的实现，JS 侧桥的本质是一个**消息队列**，本节的任务是 JS 侧通过消息队列完成和 Native 的通信。
 
+**Why Messagequeue(MQ)?** 主要原因有两：异步通信和优化性能。
+
+- **异步通信**：JS 引擎和 Native 代码运行在不同线程上，由于线程隔离，JS 无法直接调用 Native 的函数，必须通过某种跨线程通信机制，消息队列是实现这种跨线程异步通信的经典方案
+- **优化性能**：队列包含了一批消息信息，有了 MQ 后 JS 可以一次批传输多个消息给 Native，相比于每个消息单个传输给 Native 这可以减少跨线程通信的开销。
+
+接下来，来看看 `MessageQueue.js` 的接口设计，我摘取了关键成员变量和方法，代码如下：
+
+```typescript
+class MessageQueue {
+  // [moduleIDs, methodIDs, params, callbackIDs]
+  private _queue: [number[], number[], number[], number[]] = [[], [], [], []];
+  // 回调 id，递增记录
+  private _callID: number = 0;
+  // 回调 map，key 为 回调 id
+  private _callbacks: { [key: number]: { onSucc: Function; onFail: Function } } = {};
+  // JavaScript → Native 调用
+  public enqueueNativeCall(moduleID, methodID, params, onFail, onSucc);
+  // Native → JavaScript 调用，场景为模块的事件通知
+  public callFunctionReturnFlushedQueue(module, method, args);
+  // Native → JavaScript 调用，场景为模块的异步回调
+  public invokeCallbackAndReturnFlushedQueue(cbID, args);
+}
+```
+
+本节中只展开  JS 调用 Native 的实现，Native 调用 JS 的实现会随模块系统章节展开。那么现在来实现 JS 调用 Native：JS 侧会先调用 MQ 的 `enqueueNativeCall` 方法，往内部 `_queue` 队列追加当前消息。注意 `_queue` 是一个二维数组，每行是一条消息，四列分别存储模块 id、方法 id、参数、回调 id 的数据。然后再调用 `_flushQueue` ，其中的核心是通过 C++ 注入的 `nativeFlushQueueImmediate` 方法来触发 C++ 方法回调，处理 JS 传入的队列数据。为了快速验证，C++ 的 `nativeFlushQueueImmediate` 方法的回调先简单实现为输出 JS 调用的消息信息，这个方法在下一节再完善其实现。
+
+```js
+class MessageQueue {
+  enqueueNativeCall(moduleID, methodID, params, onFail, onSucc) {
+    // 生成回调ID并注册回调函数
+    let callbackID = null
+    if (onFail || onSucc) {
+      callbackID = this._callbackID++
+      this._callbacks[callbackID] = {
+        onFail: onFail,
+        onSucc: onSucc,
+      }
+    }
+
+    // 将调用添加到队列中
+    this._queue[0].push(moduleID) // moduleIds
+    this._queue[1].push(methodID) // methodIds
+    this._queue[2].push(params || []) // params
+    this._queue[3].push(callbackID) // callbackIds
+
+    // 立即刷新队列（简化版实现，实际 RN 会做批量优化）
+    this._flushQueue()
+  }
+ 
+  _flushQueue() {
+    if (this._queue[0].length === 0) {
+      return // 队列为空，无需刷新
+    }
+    const queue = this.flushedQueue()
+    // 重要：调用 Native 注入的方法，会触发 C++ 的回调
+    global.nativeFlushQueueImmediate(queue)
+  }
+}
+```
+
+实现了 `MessageQueue.js` 后，再参考 RN 的实现把 `BatchedBridge.js` 完成，这个文件的作用是在 JS 环境中把桥实例注册到 `global` 上的变量上供 C++ 调用并把桥实例导出供 JS 调用，精简代码如下：
+
+```js
+// BatchedBridge.js
+// JSC 环境没有 require 的实现，这里为了便于理解原理先用 require 来演示代码
+const MessageQueue = require('./MessageQueue.js')
+const BatchedBridge = new MessageQueue()
+
+// 注册到 global 上，供 C++ 调用
+Object.defineProperty(global, '__fbBatchedBridge', {
+  configurable: true,
+  value: BatchedBridge,
+})
+
+module.exports = BatchedBridge;
+```
+
+完成了 JS 侧批量桥（本质是消息队列）的实现后，就可以新建一个测试文件 `test_mq.cpp` 来测试下 JS 调用 Native 的功能了，代码如下。经过一番调试，C++ 日志中成功输出了 JS 侧调用并输入的参数。
+
+```c++
+// test_mq.cpp
+int main() {
+  JSCExecutor executor;
+
+  // 由于现在还没接入打包工具
+  // 需要先手动加载 BatchedBridge.js 到 JS 环境中
+  std::cout << "Loading BatchedBridge.js..." << std::endl;
+  std::string batchedBridgeJS = readFile("src/js/BatchedBridge.js");
+  executor.loadApplicationScript(batchedBridgeJS, "BatchedBridge.js");
+
+  // 运行测试
+  std::string messageQueueTestScript = R"(
+            // 没有 require 方法，为了方便理解先这样实现
+            const BatchedBridge = require('BatchedBridge')
+            BatchedBridge.enqueueNativeCall(
+              2,
+              1,
+              ['test_param'],
+              function (error) {
+                // JSC 环境没提供 console
+                // JS 侧封装 global.nativeLoggingHook 方法得到，过程省略
+                console.log('Error callback executed with:', error)
+              },
+              function (result) {
+                console.log('Success callback executed with:', result)
+              },
+            )
+        )";
+
+  executor.loadApplicationScript(messageQueueTestScript,
+                                 "test_messagequeue.js");
+
+  return 0;
+}
+```
+
+总结一下，本节我们定义好了 JS 侧桥关键方法的接口并实现了其中 JS 调用 Native 的方法。有了消息队列，便有了 **批量&异步** 调用的可能。
 
 ## Native 模块系统实现
 
