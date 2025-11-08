@@ -1,3 +1,4 @@
+// MDX 组件，对 *.mdx 文件生效
 import React, { ComponentPropsWithoutRef } from 'react'
 import Link from 'next/link'
 import { highlight } from 'sugar-high'
@@ -38,10 +39,10 @@ const components = {
   h4: (props: HeadingProps) => <h4 className={mdxStyles.h4} {...props} />,
   p: (props: ParagraphProps) => <p className={mdxStyles.p} {...props} />,
   ol: (props: ListProps) => <ol className="text-gray-800 dark:text-zinc-300 list-decimal pl-5 space-y-2" {...props} />,
-  ul: (props: ListProps) => <ul className="text-gray-800 dark:text-zinc-300 list-disc pl-5 space-y-1" {...props} />,
+  ul: (props: ListProps) => <ul className="text-gray-800 dark:text-zinc-300 list-disc pl-5 space-y-1 mb-5" {...props} />,
   li: (props: ListItemProps) => <li className="pl-1" {...props} />,
   em: (props: ComponentPropsWithoutRef<'em'>) => <em className="font-medium" {...props} />,
-  strong: (props: ComponentPropsWithoutRef<'strong'>) => <strong className="font-medium" {...props} />,
+  strong: (props: ComponentPropsWithoutRef<'strong'>) => <strong className="font-semibold" {...props} />,
   a: ({ href, children, ...props }: AnchorProps) => {
     if (href?.startsWith('/')) {
       return (

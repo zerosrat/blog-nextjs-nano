@@ -1,3 +1,4 @@
+// 首页
 import { getAllPosts, groupPostsByYear, formatDate } from '@/lib/posts'
 
 export const metadata = {
@@ -7,8 +8,7 @@ export const metadata = {
   },
 }
 
-// 复制自 mdx-components.tsx 的样式常量
-const mdxStyles = {
+const styles = {
   h1: 'text-gray-900 dark:text-zinc-100 font-extrabold text-4xl mt-0 mb-4',
   h2: 'text-gray-900 dark:text-zinc-100 font-bold text-2xl mt-8 mb-4',
   h3: 'text-gray-900 dark:text-zinc-100 font-semibold text-xl mt-6 mb-2',
@@ -24,23 +24,23 @@ export default async function HomePage() {
 
   return (
     <div>
-      <h1 className={mdxStyles.h1}>Zero Yu</h1>
+      <h1 className={styles.h1}>Zero Yu</h1>
 
       <br />
 
-      <p className={mdxStyles.p}>This is my portfolio, blog, and personal website.</p>
+      <p className={styles.p}>This is my portfolio, blog, and personal website.</p>
 
-      <h2 className={mdxStyles.h2}>Blog</h2>
+      <h2 className={styles.h2}>Blog</h2>
 
       {Object.entries(postsByYear)
         .sort(([a], [b]) => parseInt(b) - parseInt(a)) // 年份降序
         .map(([year, yearPosts]) => (
           <section key={year}>
-            <h3 className={mdxStyles.h3}>{year}</h3>
-            <ul className={mdxStyles.ul}>
+            <h3 className={styles.h3}>{year}</h3>
+            <ul className={styles.ul}>
               {yearPosts.map((post) => (
-                <li key={post.href} className={mdxStyles.li}>
-                  <a href={post.href} className={mdxStyles.link}>
+                <li key={post.href} className={styles.li}>
+                  <a href={post.href} className={styles.link}>
                     {post.title}
                   </a>
                   <span className="text-gray-500 dark:text-gray-400"> · {formatDate(post.date)}</span>
