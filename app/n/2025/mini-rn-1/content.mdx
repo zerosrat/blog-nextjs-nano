@@ -242,7 +242,7 @@ class MessageQueue {
   private _callID: number = 0;
   // 回调 map，key 为 回调 id
   private _callbacks: { [key: number]: { onSucc: Function; onFail: Function } } = {};
-  // JavaScript → Native 调用
+  // JavaScript → Native 调用（异步）
   public enqueueNativeCall(moduleID, methodID, params, onFail, onSucc);
   // Native → JavaScript 调用，场景为模块的事件通知
   public callFunctionReturnFlushedQueue(module, method, args);
@@ -355,9 +355,10 @@ interface DeviceInfo {
   static getSystemVersion: () => string; // 获取系统版本（同步）
 }
 
+import { DeviceInfo } from 'react-native'
 async function foo() {
-  const uniqueId = await getUniqueId()
-  const systemVersion = getSystemVersion()
+  const uniqueId = await DeviceInfo.getUniqueId()
+  const systemVersion = DeviceInfo.getSystemVersion()
 }
 ```
 
@@ -396,7 +397,55 @@ std::string DeviceInfoModule::getSystemVersionImpl() const {
 }
 ```
 
+macOS 平台的设备信息模块及其方法实现后，JS 就需要想方设法调用它，那么怎么做呢？本节开始时，我们给到了使用 `DeviceInfo.js` 模块上方法的 JS 片段，不难看出 JS 侧调用的方法其实和 Native 侧最终实现的方法其实是对应上的，现在的问题就在于 JS 和 Native 两侧的模块和方法如何建立对应关系。
 
+在上一章节中，MQ 的接口中有一个方法 `public enqueueNativeCall(moduleID, methodID, params, onFail, onSucc);` 是专门用于 JS 异步调用 Native 的，可以看到 JS 调用时需要告诉 Native 自己要调用哪个模块（`moduleID`）的哪个方法（`methodID`）。而这些 id 是 `int` 类型的而非 `string`，JS 显然无法预设 Native 模块的模块名和方法的对应 id 是多少，需要 Native 侧把模块们的信息告诉 JS，JS 完成注册，方可被使用。这个过程便是模块的**注册**。
+
+```mermaid
+flowchart LR
+    subgraph "Native 端数据存储"
+        A["ModuleRegistry<br/>📊 Array&lt;ModuleName&gt;<br/>['DeviceInfo', 'NetworkInfo', ...]<br/>index: ModuleId"]
+        B["NativeModule 实现<br/>📊 Array&lt;MethodName&gt;<br/>['getDeviceName', 'getVersion', ...]<br/>index: MethodId"]
+    end
+
+    subgraph "数据收集与转换"
+        C["配置数据构建<br/>🔄 收集各模块信息"]
+        D["注册数组<br/>📦 Array&lt;ModuleConfig&gt;<br/>[<br/>  ['DeviceInfo', {}, ['getDeviceName', 'getVersion'], [0, 1], []],<br/>  ['NetworkInfo', {}, ['getConnectionType'], [0], []]<br/>]"]
+    end
+
+    subgraph "C++ → JS 传输"
+        E["JSCExecutor 注入<br/>🚀 __fbBatchedBridgeConfig"]
+    end
+
+    subgraph "JS 端解析与映射"
+        F["解析配置数组<br/>🔍 遍历模块配置"]
+        G["名称映射表<br/>📋 Map&lt;string, number&gt;<br/>{<br/>  'DeviceInfo': 0,<br/>  'NetworkInfo': 1<br/>}"]
+        H["方法映射表<br/>📋 Map&lt;string, number&gt;<br/>{<br/>  'getDeviceName': 0,<br/>  'getVersion': 1,<br/>  'getConnectionType': 0<br/>}"]
+    end
+
+    subgraph "最终可调用接口"
+        I["动态生成模块<br/>✨ NativeModules.DeviceInfo<br/>包含可调用方法"]
+    end
+
+    A --> C
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    F --> H
+    G --> I
+    H --> I
+
+    style A fill:#e3f2fd
+    style B fill:#e3f2fd
+    style D fill:#fff3e0
+    style G fill:#e8f5e8
+    style H fill:#e8f5e8
+    style I fill:#f3e5f5
+```
+
+哈哈
 
 ### JS ↔ Native 双向调用流程
 
