@@ -401,9 +401,11 @@ macOS 平台的设备信息模块及其方法实现后，JS 就需要想方设�
 
 在上一章节中，MQ 的接口中有一个方法 `public enqueueNativeCall(moduleID, methodID, params, onFail, onSucc);` 是专门用于 JS 异步调用 Native 的，可以看到 JS 调用时需要告诉 Native 自己要调用哪个模块（`moduleID`）的哪个方法（`methodID`）。而这些 id 是 `int` 类型的而非 `string`，JS 显然无法预设 Native 模块的模块名和方法的对应 id 是多少，需要 Native 侧把模块们的信息告诉 JS，JS 完成注册，方可被使用。这个过程便是模块的**注册**。
 
-![](/static/images/mini-rn-1/module-registration.png)
+用下面的数据转换图来说明下模块注册的流程（为了便于理解，图内的代码语法使用 JS）。首先 Native 侧存储了模块及其方法的信息（包含了模块名、模块 id、方法名、方法 id 信息），两个数据格式均为 `Array<string>`。然后再把模块信息进行数据组装，格式为 `Array<[ModuleName, Constants, Methods, PromiseMethods, SyncMethods]>` 二位数组，其中数组的下标为模块 id，数组内单行为模块的信息，单号元素的信息依次为模块名、常量、方法名、promise 方法下标、同步方法下标。得到了该信息后，再将数组注入到 JS 环境的全局变量 `global.__fbBatchedBridgeConfig.remoteModuleConfig` 上。这时 JS 就可以通过遍历模块配置，动态生成模块方法的调用了。
 
-哈哈
+![module-registration-flow](/static/images/mini-rn-1/module-registration.png)
+
+这样就完成了 Native 方法到 JS 调用的信息对齐，其关键在于定义好配置数据格式，让 Native 可以方便地组装配置数据，让 JS 可以方便地解析配置数据。
 
 ### JS ↔ Native 双向调用流程
 

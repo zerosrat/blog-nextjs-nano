@@ -5,13 +5,13 @@
 ```mermaid
 flowchart LR
     subgraph "Native 端数据存储"
-        A["ModuleRegistry<br/>📊 Array&lt;ModuleName&gt;<br/>['DeviceInfo', 'NetworkInfo', ...]<br/>index: ModuleId"]
-        B["NativeModule 实现<br/>📊 Array&lt;MethodName&gt;<br/>['getDeviceName', 'getVersion', ...]<br/>index: MethodId"]
+        A["ModuleRegistry.cpp<br/>📊 Array&lt;ModuleName&gt;<br/>eg: ['DeviceInfo', 'NetworkInfo', ...]<br/>index: ModuleId"]
+        B["NativeModule.cpp<br/>📊 Array&lt;MethodName&gt;<br/>eg: ['getUniqueId', 'getSystemVersion', ...]<br/>index: MethodId"]
     end
 
     subgraph "数据收集与转换"
         C["配置数据构建<br/>🔄 收集各模块信息"]
-        D["注册数组<br/>📦 Array&lt;ModuleConfig&gt;<br/>[<br/>  ['DeviceInfo', {}, ['getDeviceName', 'getVersion'], [0, 1], []],<br/>  ['NetworkInfo', {}, ['getConnectionType'], [0], []]<br/>]"]
+        D["注册数组<br/>📦 Array&lt;ModuleConfig&gt;<br/>eg: [<br/>  ['DeviceInfo', {}, ['getUniqueId', 'getSystemVersion'], [0], [1]],<br/>  ['NetworkInfo', {}, ['getConnectionType'], [0], []]<br/>]"]
     end
 
     subgraph "C++ → JS 传输"
@@ -20,8 +20,8 @@ flowchart LR
 
     subgraph "JS 端解析与映射"
         F["解析配置数组<br/>🔍 遍历模块配置"]
-        G["名称映射表<br/>📋 Map&lt;string, number&gt;<br/>{<br/>  'DeviceInfo': 0,<br/>  'NetworkInfo': 1<br/>}"]
-        H["方法映射表<br/>📋 Map&lt;string, number&gt;<br/>{<br/>  'getDeviceName': 0,<br/>  'getVersion': 1,<br/>  'getConnectionType': 0<br/>}"]
+        G["名称映射表<br/>📋 Map&lt;string, number&gt;<br/>eg: {<br/>  'DeviceInfo': 0,<br/>  'NetworkInfo': 1<br/>}"]
+        H["方法映射表<br/>📋 Map&lt;string, number&gt;<br/>eg: {<br/>  'getUniqueId': 0,<br/>  'getSystemVersion': 1,<br/>}<br />{<br/>  'getConnectionType': 0<br/>}"]
     end
 
     subgraph "最终可调用接口"
