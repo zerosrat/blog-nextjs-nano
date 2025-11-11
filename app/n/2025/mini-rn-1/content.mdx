@@ -366,9 +366,10 @@ async function foo() {
 
 设备模块需要读取 Native 侧的系统信息。当前阶段 Native 运行在 **macOS** 平台，因此我们需要使用 **Objective-C++（OC++）** 结合 Apple 提供的 macOS SDK 来访问系统和设备相关的底层能力。 由于 macOS 平台的原生开发主要使用 **Objective-C**，而我们的核心逻辑是以 **C++** 实现的，为了在两者之间进行无缝互调，我们采用 **OC++** 作为桥接语言。
 
-OC++ 语言的文件是 `*.mm` 后缀的，我们新建一个 macOS 平台专属的设备模块文件 `DeviceInfoModule.mm` 并实现所需要的两个关键方法，摘要代码如下。由于是 OC++ 实现且调用了 macOS SDK，前端工程师看不懂也没关系，只需要知道我们实现了 macOS 模块的相关方法就好。
+OC++ 语言的文件是 `*.mm` 后缀的，我们新建一个 macOS 平台专属的设备模块文件 `DeviceInfoModule.mm` 并实现所需要的两个关键方法，摘要代码如下。由于是 OC++ 实现且调用了 Apple 提供的 macOS SDK，前端工程师看不懂也没关系，只需要知道我们实现了 macOS 模块的相关方法就好。
 
 ```objective-c
+// DeviceInfoModule.mm
 std::string DeviceInfoModule::getUniqueIdImpl() const {
   @autoreleasepool {
     io_registry_entry_t ioRegistryRoot =
@@ -409,10 +410,108 @@ macOS 平台的设备信息模块及其方法实现后，JS 就需要想方设�
 
 ### JS ↔ Native 双向调用流程
 
+常见的模块调用方法类型包含**同步**和**异步**的（DeviceInfo 模块刚好两种都有，便于演示和学习）。开篇“桥架构通信的本质”这章节中其实已经稍微讲解了同步调用是如何运作的，例子是 `Dimensions.get('window')`，可以再来用 DeviceInfo 模块进行展开并温习下。以 JS 侧调用 `DeviceInfo.getSystemVersion()` 为例，在调用方法前 Native 已经提前给 JS 环境注册好了模块信息和 `global.nativeCallSyncHook(moduleId, methodId, args)` 方法，在调用方法时的调用 `global.nativeCallSyncHook(0, 1, null)`。然后同步等待 C++ 匹配具体模块的方法并调用并返回数据。整个过程是同步的，不经过桥。贴一个 C++ 同步处理并返回结果的简化代码如下。
+
+```c++
+// JSCExector.cpp
+JSValueRef JSCExecutor::nativeCallSyncHook(JSValueRef moduleID,
+                                           JSValueRef methodID,
+                                           JSValueRef args) {
+  // 将 JSValue 参数转换为 C++ 类型
+  double moduleIdDouble = JSValueToNumber(m_context, moduleID, nullptr);
+  double methodIdDouble = JSValueToNumber(m_context, methodID, nullptr);
+  unsigned int moduleIdInt = static_cast<unsigned int>(moduleIdDouble);
+  unsigned int methodIdInt = static_cast<unsigned int>(methodIdDouble);
+  // 将参数转换为 JSON 字符串
+  std::string argsJson = jsValueToJSONString(args);
+	// 模块注册器进行分发并调用具体方法，同步返回结果
+  std::string result = m_moduleRegistry->callSerializableNativeHook(
+      moduleIdInt, methodIdInt, argsJson);
+	// C++ 类型数据转 JS 类型
+  return stringToJSValue(result);
+}
+```
+
+另一种是异步调用，比同步调用要稍微复杂些，可以用 `await DeviceInfo.getUniqueId()` 为例。调用该方法后会先走到 `MessageQueue.js` 的 `enqueueNativeCall` 方法（在“JS 侧桥核心方法实现”有展开讲这个方法的实现），前面的铺垫就是为了这里能够串联 JS 到 Native 的调用。再提一嘴，`enqueueNativeCall` 的实现实际是简化的，当前的实现是把消息推入队列后直接 flush 没有接入 Timer 做异步批处理，导致每次调用 `enqueueNativeCall` 事实上都只会给 Native 侧发一条消息，性能一般般。当前这么做是为了便于理解，不引入太多其他内容。
+
+然后 JS 侧最终会调用到 `global.nativeFlushQueueImmediate(queue)` 方法，参数和同步调用的差别是多了 `callbackID` 参数，这个新增的参数是连接 Native 到 JS 异步回调的桥梁。现在我们来到 Native 侧，先看看处理调用的方法，代码如下。其实和同步调用处理的思路是类似的，都是用模块 id、方法名 id 定位到具体方法并调用。关键的不同的是结果没有同步立即的返回。
+
+```c++
+// JSCExector.cpp
+void JSCExecutor::nativeFlushQueueImmediate(JSValueRef queue) {
+  // Step 1: JSValue -> JSON字符串 (对齐RN: queue.toJSONString())
+  std::string queueStr = jsValueToJSONString(queue);
+
+  // Step 2: JSON字符串 -> BridgeMessage (替代 folly::parseJson)
+  std::cout << "[JSCExecutor] Parsing JSON with SimpleBridgeJSONParser..."
+            << std::endl;
+  mini_rn::bridge::BridgeMessage message =
+      mini_rn::utils::SimpleBridgeJSONParser::parseBridgeQueue(queueStr);
+
+  // Step 3: 处理消息
+  for (size_t i = 0; i < message.getCallCount(); i++) {
+    unsigned int moduleId = static_cast<unsigned int>(message.moduleIds[i]);
+    unsigned int methodId = static_cast<unsigned int>(message.methodIds[i]);
+    const std::string &params = message.params[i];
+    int callId = message.callbackIds[i];
+
+    // 通过 ModuleRegistry 调用 Native 模块方法
+    m_moduleRegistry->callNativeMethod(moduleId, methodId, params, callId);
+  }
+}
+```
+
+然后我们来看看异步回调是怎么实现的
+
+```c++
+// JSCExector.cpp
+void JSCExecutor::invokeCallback(int callId, const std::string &result,
+                                 bool isError) {
+  // 实现将结果返回给 JavaScript 的机制
+  // 调用 JavaScript 的 invokeCallbackAndReturnFlushedQueue 方法
+
+  // 获取全局 __fbBatchedBridge 对象
+  JSObjectRef bridgeObject = JSValueToObject(
+      m_context,
+      JSObjectGetProperty(m_context, m_globalObject,
+                          JSStringCreateWithUTF8CString("__fbBatchedBridge"),
+                          nullptr),
+      nullptr);
+
+  // 获取 invokeCallbackAndReturnFlushedQueue 方法
+  JSValueRef methodValue = JSObjectGetProperty(
+      m_context, bridgeObject,
+      JSStringCreateWithUTF8CString("invokeCallbackAndReturnFlushedQueue"),
+      nullptr);
+
+  // 准备回调参数
+  // React Native 回调约定：第一个参数是错误，后续参数是结果
+  // 错误情况：[error]
+  // 成功情况：[null, result]
+  std::string argsJson =
+      isError ? "[\"" + result + "\"]" : "[null, " + result + "]";
+
+  // 创建参数数组
+  JSValueRef arguments[2];
+  arguments[0] = JSValueMakeNumber(m_context, callId);  // callbackID
+  // 解析 JSON 参数
+  arguments[1] = JSValueMakeFromJSONString(
+      m_context, JSStringCreateWithUTF8CString(argsJson.c_str()));  // args
+
+  // 调用 JavaScript 回调方法
+  JSValueRef exception = nullptr;
+  JSValueRef callResult =
+      JSObjectCallAsFunction(m_context, (JSObjectRef)methodValue,
+                             bridgeObject,  // thisObject
+                             2,             // argumentCount
+                             arguments,     // arguments
+                             &exception);
+}
+```
 
 
-### 
 
 ## 参考
 
-[React Native在美团外卖客户端的实践](https://tech.meituan.com/2019/12/19/meituan-mrn-practice.html)
+1. [React Native在美团外卖客户端的实践](https://tech.meituan.com/2019/12/19/meituan-mrn-practice.html)
+2. https://github.com/facebook/react-native/tree/v0.57.8
