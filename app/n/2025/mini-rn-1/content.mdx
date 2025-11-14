@@ -66,7 +66,7 @@ const App = () => {
 
 由此我们可以发现，C++ 环境创建并管理了 JS 环境，既可以为 JS 环境注入全局变量和方法供 JS 调用，也可以主动调用 JS 环境中的方法，C++ 环境对 JS 上下文有着极高的控制权。这也是桥通信的奥秘所在。
 
-## 任务概览
+## 正式开始前：任务概览
 
 > 本项目的桥架构实现参考 react-native@v0.57.8 版本，该版本只包含 Bridge 代码不包含 JSI 代码，便于学习和参考。
 
@@ -410,7 +410,11 @@ macOS 平台的设备信息模块及其方法实现后，JS 就需要想方设�
 
 ### JS ↔ Native 双向调用流程
 
-常见的模块调用方法类型包含**同步**和**异步**的（DeviceInfo 模块刚好两种都有，便于演示和学习）。开篇“桥架构通信的本质”这章节中其实已经稍微讲解了同步调用是如何运作的，例子是 `Dimensions.get('window')`，可以再来用 DeviceInfo 模块进行展开并温习下。以 JS 侧调用 `DeviceInfo.getSystemVersion()` 为例，在调用方法前 Native 已经提前给 JS 环境注册好了模块信息和 `global.nativeCallSyncHook(moduleId, methodId, args)` 方法，在调用方法时的调用 `global.nativeCallSyncHook(0, 1, null)`。然后同步等待 C++ 匹配具体模块的方法并调用并返回数据。整个过程是同步的，不经过桥。贴一个 C++ 同步处理并返回结果的简化代码如下。
+常见的模块调用方法类型包含**同步**和**异步**的（DeviceInfo 模块刚好两种都有，便于演示和学习）。开篇“桥架构通信的本质”这章节中其实已经稍微讲解了同步调用是如何运作的，例子是 `Dimensions.get('window')`，可以再来用 DeviceInfo 模块进行展开并温习下。以 JS 侧调用 `DeviceInfo.getSystemVersion()` 为例，在调用方法前 Native 已经提前给 JS 环境注册好了模块信息和 `global.nativeCallSyncHook(moduleId, methodId, args)` 方法，在调用方法时的调用 `global.nativeCallSyncHook(0, 1, null)`。然后同步等待 C++ 匹配具体模块的方法并调用并返回数据。整个过程是同步的，不经过桥。整个过程的时序图如下。
+
+![sync-call-flow](/static/images/mini-rn-1/sync-call-native.png)
+
+再贴一个 C++ 同步处理并返回结果的简化代码如下（模块注册器如何分发的实现略）。
 
 ```c++
 // JSCExector.cpp
@@ -431,6 +435,8 @@ JSValueRef JSCExecutor::nativeCallSyncHook(JSValueRef moduleID,
   return stringToJSValue(result);
 }
 ```
+
+
 
 另一种是异步调用，比同步调用要稍微复杂些，可以用 `await DeviceInfo.getUniqueId()` 为例。调用该方法后会先走到 `MessageQueue.js` 的 `enqueueNativeCall` 方法（在“JS 侧桥核心方法实现”有展开讲这个方法的实现），前面的铺垫就是为了这里能够串联 JS 到 Native 的调用。再提一嘴，`enqueueNativeCall` 的实现实际是简化的，当前的实现是把消息推入队列后直接 flush 没有接入 Timer 做异步批处理，导致每次调用 `enqueueNativeCall` 事实上都只会给 Native 侧发一条消息，性能一般般。当前这么做是为了便于理解，不引入太多其他内容。
 
