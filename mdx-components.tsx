@@ -2,6 +2,7 @@
 import React, { ComponentPropsWithoutRef } from 'react'
 import Link from 'next/link'
 import { highlight } from 'sugar-high'
+import ImageWithPreview from '@/components/ImageWithPreview'
 
 type HeadingProps = ComponentPropsWithoutRef<'h1'>
 type ParagraphProps = ComponentPropsWithoutRef<'p'>
@@ -98,6 +99,7 @@ const components = {
   tbody: (props: TbodyProps) => <tbody {...props} />,
   th: (props: ThProps) => <th className={mdxStyles.th} {...props} />,
   td: (props: TdProps) => <td className={mdxStyles.td} {...props} />,
+  img: (props: ComponentPropsWithoutRef<'img'>) => <ImageWithPreview {...props} />,
 }
 
 declare global {
