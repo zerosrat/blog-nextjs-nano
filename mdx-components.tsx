@@ -38,7 +38,7 @@ const components = {
   h3: (props: HeadingProps) => <h3 className={mdxStyles.h3} {...props} />,
   h4: (props: HeadingProps) => <h4 className={mdxStyles.h4} {...props} />,
   p: (props: ParagraphProps) => <p className={mdxStyles.p} {...props} />,
-  ol: (props: ListProps) => <ol className="text-gray-800 dark:text-zinc-300 list-decimal pl-5 space-y-2" {...props} />,
+  ol: (props: ListProps) => <ol className="text-gray-800 dark:text-zinc-300 list-decimal pl-5 space-y-2 mb-5" {...props} />,
   ul: (props: ListProps) => <ul className="text-gray-800 dark:text-zinc-300 list-disc pl-5 space-y-1 mb-5" {...props} />,
   li: (props: ListItemProps) => <li className="pl-1" {...props} />,
   em: (props: ComponentPropsWithoutRef<'em'>) => <em className="font-medium" {...props} />,

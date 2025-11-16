@@ -402,7 +402,7 @@ macOS 平台的设备信息模块及其方法实现后，JS 就需要想方设�
 
 在上一章节中，MQ 的接口中有一个方法 `public enqueueNativeCall(moduleID, methodID, params, onFail, onSucc);` 是专门用于 JS 异步调用 Native 的，可以看到 JS 调用时需要告诉 Native 自己要调用哪个模块（`moduleID`）的哪个方法（`methodID`）。而这些 id 是 `int` 类型的而非 `string`，JS 显然无法预设 Native 模块的模块名和方法的对应 id 是多少，需要 Native 侧把模块们的信息告诉 JS，JS 完成注册，方可被使用。这个过程便是模块的**注册**。
 
-用下面的数据转换图来说明下模块注册的流程（为了便于理解，图内的代码语法使用 JS）。首先 Native 侧存储了模块及其方法的信息（包含了模块名、模块 id、方法名、方法 id 信息），两个数据格式均为 `Array<string>`。然后再把模块信息进行数据组装，格式为 `Array<[ModuleName, Constants, Methods, PromiseMethods, SyncMethods]>` 二位数组，其中数组的下标为模块 id，数组内单行为模块的信息，单号元素的信息依次为模块名、常量、方法名、promise 方法下标、同步方法下标。得到了该信息后，再将数组注入到 JS 环境的全局变量 `global.__fbBatchedBridgeConfig.remoteModuleConfig` 上。这时 JS 就可以通过遍历模块配置，动态生成模块方法的调用了。
+用下面的数据转换图来说明下模块注册的流程（为了便于理解，图内的代码使用类似 JS 的伪代码）。首先 Native 侧存储了模块及其方法的信息（包含了模块名、模块 id、方法名、方法 id 信息），两个数据格式均为 `Array<string>`。然后再把模块信息进行数据组装，格式为 `Array<[ModuleName, Constants, Methods, PromiseMethods, SyncMethods]>` 二位数组，其中数组的下标为模块 id，数组内单行为模块的信息，单号元素的信息依次为模块名、常量、方法名、promise 方法下标、同步方法下标。得到了该信息后，再将数组注入到 JS 环境的全局变量 `global.__fbBatchedBridgeConfig.remoteModuleConfig` 上。这时 JS 就可以通过遍历模块配置，动态生成模块方法的调用了。
 
 ![module-registration-flow](/static/images/mini-rn-1/module-registration.png)
 
@@ -410,7 +410,9 @@ macOS 平台的设备信息模块及其方法实现后，JS 就需要想方设�
 
 ### JS ↔ Native 双向调用流程
 
-常见的模块调用方法类型包含**同步**和**异步**的（DeviceInfo 模块刚好两种都有，便于演示和学习）。开篇“桥架构通信的本质”这章节中其实已经稍微讲解了同步调用是如何运作的，例子是 `Dimensions.get('window')`，可以再来用 DeviceInfo 模块进行展开并温习下。以 JS 侧调用 `DeviceInfo.getSystemVersion()` 为例，在调用方法前 Native 已经提前给 JS 环境注册好了模块信息和 `global.nativeCallSyncHook(moduleId, methodId, args)` 方法，在调用方法时的调用 `global.nativeCallSyncHook(0, 1, null)`。然后同步等待 C++ 匹配具体模块的方法并调用并返回数据。整个过程是同步的，不经过桥。整个过程的时序图如下。
+常见的模块调用方法类型包含**同步**和**异步**的（DeviceInfo 模块刚好两种都有，便于演示和学习）。开篇“桥架构通信的本质”这章节中其实已经稍微讲解了同步调用是如何运作的，例子是 `Dimensions.get('window')`，可以再来用 DeviceInfo 模块进行展开并温习下。以 JS 侧调用 `DeviceInfo.getSystemVersion()` 为例，在调用方法前 Native 已经提前给 JS 环境注册好了模块信息和 `global.nativeCallSyncHook(moduleId, methodId, args)` 方法，在调用方法时的调用 `global.nativeCallSyncHook(0, 1, null)`。然后同步等待 C++ 匹配具体模块的方法并调用并返回数据。整个过程是同步的，不经过桥（桥的消息队列机制主要用于异步通信）。同步调用直接通过 JSC API 在当前线程完成，避免了跨线程通信的开销，但也意味着会阻塞 JS 线程直到 Native 返回结果，因此同步方法应当尽量避免耗时操作。
+
+同步调用的时序图如下。
 
 ![sync-call-flow](/static/images/mini-rn-1/sync-call-native.png)
 
@@ -436,11 +438,11 @@ JSValueRef JSCExecutor::nativeCallSyncHook(JSValueRef moduleID,
 }
 ```
 
+另一种是异步调用，比同步调用要稍微复杂些，可以用 `await DeviceInfo.getUniqueId()` 为例。调用该方法后会先走到 `MessageQueue.js` 的 `enqueueNativeCall` 方法（在“JS 侧桥核心方法实现”有展开讲这个方法的实现），前面的铺垫就是为了这里能够串联 JS 到 Native 的调用。再提一嘴，`enqueueNativeCall` 的实现实际是简化的，当前的实现是把消息推入队列后直接 flush 没有接入 Timer 做异步批处理，导致每次调用 `enqueueNativeCall` 事实上都只会给 Native 侧发一条消息，性能一般般。真实的 RN 实现中会引入 Timer 将多个调用累积到一帧内批量发送，从而减少跨线程通信次数。当前这么做是为了便于理解，不引入太多其他内容。
 
+然后 JS 侧最终会调用到 `global.nativeFlushQueueImmediate(queue)` 方法，参数和同步调用的差别是多了 `callbackID` 参数，这个新增的参数是连接 Native 到 JS 异步回调的桥梁。每次异步调用时，MessageQueue 都会生成一个唯一的递增 callbackID，并将对应的成功/失败回调函数存储在 `_callbacks` map 中。当 Native 异步返回结果后，会携带这个 callbackID 回调 JS，JS 侧再通过 callbackID 查找并执行对应的回调函数，执行完成后会从 map 中删除该回调，避免内存泄漏。
 
-另一种是异步调用，比同步调用要稍微复杂些，可以用 `await DeviceInfo.getUniqueId()` 为例。调用该方法后会先走到 `MessageQueue.js` 的 `enqueueNativeCall` 方法（在“JS 侧桥核心方法实现”有展开讲这个方法的实现），前面的铺垫就是为了这里能够串联 JS 到 Native 的调用。再提一嘴，`enqueueNativeCall` 的实现实际是简化的，当前的实现是把消息推入队列后直接 flush 没有接入 Timer 做异步批处理，导致每次调用 `enqueueNativeCall` 事实上都只会给 Native 侧发一条消息，性能一般般。当前这么做是为了便于理解，不引入太多其他内容。
-
-然后 JS 侧最终会调用到 `global.nativeFlushQueueImmediate(queue)` 方法，参数和同步调用的差别是多了 `callbackID` 参数，这个新增的参数是连接 Native 到 JS 异步回调的桥梁。现在我们来到 Native 侧，先看看处理调用的方法，代码如下。其实和同步调用处理的思路是类似的，都是用模块 id、方法名 id 定位到具体方法并调用。关键的不同的是结果没有同步立即的返回。
+接着我们来到 Native 侧，先看看处理调用的方法，代码如下。其实和同步调用处理的思路是类似的，都是用模块 id、方法名 id 定位到具体方法并调用。关键的不同的是结果没有同步立即的返回。
 
 ```c++
 // JSCExector.cpp
@@ -467,7 +469,7 @@ void JSCExecutor::nativeFlushQueueImmediate(JSValueRef queue) {
 }
 ```
 
-然后我们来看看异步回调是怎么实现的
+由于调用 C++ 后数据不是同步返回的，所以得来看看**异步回调**是怎么实现的，代码如下。核心还是通过 JSC 的 API 获取到 JS 环境上全局变量上的回调方法，即 `global.__fbBatchedBridge.invokeCallbackAndReturnFlushedQueue`，然后组装参数：把 C++ 类型的参数转为 JS 类型的，最后调用并传参。
 
 ```c++
 // JSCExector.cpp
@@ -515,7 +517,37 @@ void JSCExecutor::invokeCallback(int callId, const std::string &result,
 }
 ```
 
+异步调用的时序图展示了更复杂的流程：
+1. JS 调用后立即返回 Promise，不阻塞线程
+2. 消息经过 MessageQueue 批量发送（本实现简化为立即发送）
+3. Native 处理完成后，通过 `invokeCallbackAndReturnFlushedQueue` 回调 JS
+4. JS 根据 `callbackID` 找到对应的 Promise `resolve/reject` 函数并执行
 
+再贴一张异步调用的时序图如下。
+
+![async-call-flow](/static/images/mini-rn-1/async-call-native.png)
+
+## 彩蛋
+
+经过了一路旅途，很高兴你可以看到最后！🎉 文章篇幅有限，代码也只是贴了相关片段，如果想要了解完整的实现，可以详参项目源码。
+
+**项目地址**: [https://github.com/zerosrat/mini-react-native](https://github.com/zerosrat/mini-react-native)
+
+当前项目中包含了本篇文章中的全部内容:
+- ✅ C++ 集成 JavaScriptCore 引擎的完整实现
+- ✅ JS 侧消息队列 (MessageQueue) 的实现
+- ✅ Native 模块系统和注册机制
+- ✅ 同步/异步双向调用的完整流程
+- ✅ DeviceInfo 示例模块 (macOS 平台)
+- 📝 详细的注释和构建说明
+
+【后续计划】当前项目的进展到只是其开始阶段，接下来我计划继续完善:
+
+1. **多端支持**: 当前只支持 macOS 平台，后续将适配 iOS 和 Android 平台
+3. **渲染系统**: 当前只支持逻辑通信，后续将接入渲染层，能够渲染简单的组件
+6. **新架构探索**: 当前只支持桥架构，后续将研究 JSI、TurboModules 等新架构特性
+
+项目从开始到完成这篇博客前前后后花了一个月左右的时间，都是用打工后和周末的业余时间完成的，来之不易~希望大家可以多多给项目点赞支持 star ⭐。有其他的想法也可以多多交流喔。
 
 ## 参考
 
