@@ -82,7 +82,7 @@ const App = () => {
 
 好的，现在我们开始用 C++ 以及 JavaScriptCore 来管理 JS 上下文。首先，我们把 C++ 的头文件定义好，我摘取了其中两个重要成员变量和两个重要方法如下。C++  的 `.h` 文件用于声明接口，其实和 TypeScript 的 `.d.ts` 文件有着相似的作用。
 
-```c++
+```cpp title="JSCExecutor.h"
 // JSCExecutor.h
 class JSCExecutor {
  private:
@@ -117,7 +117,7 @@ class JSCExecutor {
 
 有了 `JSCExecutor.h` 接着我们需要实现 `JSCExecutor.cpp`。我们还是关注关键变量的初始化和关键方法的实现，先对 JS 运行上下文和 `global` 对象进行初始化，代码如下。初始化都是通过了 [JavaScriptCore API](https://developer.apple.com/documentation/javascriptcore) 来完成的。PS：Apple 平台（如 iOS、macOS）的系统内置了 JSC，引用/链接 JSC 库相对于 Android 平台更为便捷，这也是用 JSC 作为 RN JS 引擎的一个优势，即 iOS 只需引用系统内置的 JSC 引擎即可，对包大小友好。
 
-```C++
+```cpp
 // JSCExecutor.cpp
 JSCExecutor::JSCExecutor() : m_context(nullptr), m_globalObject(nullptr) {
   // 调用 JSC API 初始化 JS 运行上下文
@@ -132,7 +132,7 @@ JSCExecutor::JSCExecutor() : m_context(nullptr), m_globalObject(nullptr) {
 
 然后再来实现加载 JS 脚本和向 JS 环境注入方法，代码如下。加载 JS 脚本的关键在于用 `JSEvaluateScript` 在 JS 上下文中加载 JS 脚本的字符串，向 JS 环境注入方法关键在于用 `JSObjectSetProperty` 在 JS 上下文的全局变量上设置属性。而这些都是借助 JSC API 实现的。
 
-```c++
+```cpp
 // JSCExecutor.cpp
 void JSCExecutor::loadApplicationScript(const std::string &script,
                                         const std::string &sourceURL) {
@@ -173,7 +173,7 @@ void JSCExecutor::installGlobalFunction(
 
 然后在 `JSCExecutor` 构造器中调用 `installGlobalFunction` 给 JS 引擎注入 log 方法，供  JS 脚本调用端上方法进行输出日志，便于调试。
 
-```c++
+```cpp
 // JSCExecutor.cpp
 JSCExecutor::JSCExecutor() : m_context(nullptr), m_globalObject(nullptr) {
   // ...
@@ -203,7 +203,7 @@ JSCExecutor::JSCExecutor() : m_context(nullptr), m_globalObject(nullptr) {
 
 实现了 `JSCExecutor.cpp` 后，就可以新建一个测试文件 `test.cpp` 来试试加载并运行 JS 脚本了。经过一番编译运行，可以发现运行测试程序成功输出了 JS 调用并打印的内容，这样就测试成功了。
 
-```C++
+```cpp
 // test.cpp
 int main() {
   JSCExecutor executor;
@@ -306,7 +306,7 @@ module.exports = BatchedBridge;
 
 完成了 JS 侧批量桥（本质是消息队列）的实现后，就可以新建一个测试文件 `test_mq.cpp` 来测试下 JS 调用 Native 的功能了，代码如下。经过一番调试，C++ 日志中成功输出了 JS 侧调用并输入的参数。
 
-```c++
+```cpp
 // test_mq.cpp
 int main() {
   JSCExecutor executor;
@@ -356,7 +356,7 @@ interface DeviceInfo {
 }
 
 import { DeviceInfo } from 'react-native'
-async function foo() {
+async function Foo() {
   const uniqueId = await DeviceInfo.getUniqueId()
   const systemVersion = DeviceInfo.getSystemVersion()
 }
@@ -368,7 +368,7 @@ async function foo() {
 
 OC++ 语言的文件是 `*.mm` 后缀的，我们新建一个 macOS 平台专属的设备模块文件 `DeviceInfoModule.mm` 并实现所需要的两个关键方法，摘要代码如下。由于是 OC++ 实现且调用了 Apple 提供的 macOS SDK，前端工程师看不懂也没关系，只需要知道我们实现了 macOS 模块的相关方法就好。
 
-```objective-c
+```cpp title="DeviceInfoModule.mm"
 // DeviceInfoModule.mm
 std::string DeviceInfoModule::getUniqueIdImpl() const {
   @autoreleasepool {
@@ -418,7 +418,7 @@ macOS 平台的设备信息模块及其方法实现后，JS 就需要想方设�
 
 再贴一个 C++ 同步处理并返回结果的简化代码如下（模块注册器如何分发的实现略）。
 
-```c++
+```cpp
 // JSCExector.cpp
 JSValueRef JSCExecutor::nativeCallSyncHook(JSValueRef moduleID,
                                            JSValueRef methodID,
@@ -444,7 +444,7 @@ JSValueRef JSCExecutor::nativeCallSyncHook(JSValueRef moduleID,
 
 接着我们来到 Native 侧，先看看处理调用的方法，代码如下。其实和同步调用处理的思路是类似的，都是用模块 id、方法名 id 定位到具体方法并调用。关键的不同的是结果没有同步立即的返回。
 
-```c++
+```cpp
 // JSCExector.cpp
 void JSCExecutor::nativeFlushQueueImmediate(JSValueRef queue) {
   // Step 1: JSValue -> JSON字符串 (对齐RN: queue.toJSONString())
@@ -471,7 +471,7 @@ void JSCExecutor::nativeFlushQueueImmediate(JSValueRef queue) {
 
 由于调用 C++ 后数据不是同步返回的，所以得来看看**异步回调**是怎么实现的，代码如下。核心还是通过 JSC 的 API 获取到 JS 环境上全局变量上的回调方法，即 `global.__fbBatchedBridge.invokeCallbackAndReturnFlushedQueue`，然后组装参数：把 C++ 类型的参数转为 JS 类型的，最后调用并传参。
 
-```c++
+```cpp
 // JSCExector.cpp
 void JSCExecutor::invokeCallback(int callId, const std::string &result,
                                  bool isError) {
