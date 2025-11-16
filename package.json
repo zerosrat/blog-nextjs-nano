@@ -19,7 +19,7 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "remark-gfm": "^4.0.1",
-    "sugar-high": "^0.9.3"
+    "shiki": "^3.15.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",

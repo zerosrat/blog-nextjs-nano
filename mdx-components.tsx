@@ -1,8 +1,8 @@
 // MDX 组件，对 *.mdx 文件生效
 import React, { ComponentPropsWithoutRef } from 'react'
 import Link from 'next/link'
-import { highlight } from 'sugar-high'
 import ImageWithPreview from '@/components/ImageWithPreview'
+import CodeBlock from '@/components/CodeBlock'
 
 type HeadingProps = ComponentPropsWithoutRef<'h1'>
 type ParagraphProps = ComponentPropsWithoutRef<'p'>
@@ -24,7 +24,6 @@ const mdxStyles = {
   h4: 'text-gray-900 dark:text-zinc-100 font-semibold mt-6 mb-2',
   p: 'text-gray-700 dark:text-zinc-300 leading-relaxed',
   link: 'text-blue-500 hover:text-blue-700 dark:text-blue-400 hover:dark:text-blue-300 underline underline-offset-2 decoration-blue-500/30 hover:decoration-blue-500/60 transition-colors',
-  code: 'bg-gray-100 dark:bg-zinc-800 text-gray-800 dark:text-zinc-200 px-1.5 py-0.5 rounded text-sm font-mono',
   blockquote:
     'border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-950/20 pl-4 py-2 text-gray-700 dark:text-zinc-300 italic my-6',
   table:
@@ -65,9 +64,36 @@ const components = {
       </a>
     )
   },
-  code: ({ children, ...props }: ComponentPropsWithoutRef<'code'>) => {
-    const codeHTML = highlight(children as string)
-    return <code dangerouslySetInnerHTML={{ __html: codeHTML }} {...props} />
+  pre: ({ children, ...props }: ComponentPropsWithoutRef<'pre'>) => {
+    // pre 组件包裹代码块
+    // 提取 code 子组件的 props
+    const childProps = (children as any)?.props
+    if (!childProps) {
+      return <pre {...props}>{children}</pre>
+    }
+
+    const { className, children: code } = childProps
+
+    // 如果不是代码块，直接返回
+    if (!className || !className.startsWith('language-')) {
+      return <pre {...props}>{children}</pre>
+    }
+
+    // 使用 CodeBlock 组件处理代码块
+    return <CodeBlock className={className}>{code}</CodeBlock>
+  },
+  code: ({ children, className, ...props }: ComponentPropsWithoutRef<'code'>) => {
+    // 内联代码：直接渲染
+    // 代码块会被 pre 组件处理，这里只处理内联代码
+    const isCodeBlock = className && className.startsWith('language-')
+
+    if (isCodeBlock) {
+      // 代码块的 code 标签，由 pre 组件处理，这里直接返回 children
+      return <>{children}</>
+    }
+
+    // 内联代码
+    return <code {...props}>{children}</code>
   },
   Table: ({ data }: { data: { headers: string[]; rows: string[][] } }) => (
     <table className={mdxStyles.table}>
