@@ -1,0 +1,173 @@
+export const metadata = {
+  title: 'Mermaid 图表测试',
+  date: '2025-11-16',
+};
+
+# Mermaid 图表测试页面
+
+这个页面用于测试 Mermaid 图表渲染功能。
+
+## 1. 流程图 (Flowchart)
+
+下面是一个简单的流程图示例:
+
+```mermaid
+graph TD
+    A[开始] --> B{是否登录?}
+    B -->|是| C[显示用户信息]
+    B -->|否| D[跳转登录页]
+    C --> E[结束]
+    D --> E
+```
+
+## 2. 时序图 (Sequence Diagram)
+
+展示前后端交互的时序图:
+
+```mermaid
+sequenceDiagram
+    participant 用户
+    participant 前端
+    participant 后端
+    participant 数据库
+
+    用户->>前端: 点击登录按钮
+    前端->>后端: 发送登录请求
+    后端->>数据库: 查询用户信息
+    数据库-->>后端: 返回用户数据
+    后端-->>前端: 返回认证令牌
+    前端-->>用户: 显示登录成功
+```
+
+## 3. 类图 (Class Diagram)
+
+展示面向对象的类关系:
+
+```mermaid
+classDiagram
+    class User {
+        +String name
+        +String email
+        +login()
+        +logout()
+    }
+    class Admin {
+        +String permissions
+        +manageUsers()
+    }
+    class Post {
+        +String title
+        +String content
+        +publish()
+    }
+    
+    User <|-- Admin
+    User "1" --> "*" Post : creates
+```
+
+## 4. 状态图 (State Diagram)
+
+展示订单状态的转换:
+
+```mermaid
+stateDiagram-v2
+    [*] --> 待支付
+    待支付 --> 已支付: 支付成功
+    待支付 --> 已取消: 超时/主动取消
+    已支付 --> 配送中: 商家发货
+    配送中 --> 已完成: 用户确认收货
+    已完成 --> [*]
+    已取消 --> [*]
+```
+
+## 5. 甘特图 (Gantt Chart)
+
+项目计划时间线:
+
+```mermaid
+gantt
+    title 项目开发计划
+    dateFormat  YYYY-MM-DD
+    section 需求阶段
+    需求调研           :done,    des1, 2025-01-01, 2025-01-10
+    需求评审           :done,    des2, 2025-01-11, 2025-01-15
+    section 开发阶段
+    前端开发           :active,  dev1, 2025-01-16, 30d
+    后端开发           :         dev2, 2025-01-16, 35d
+    section 测试阶段
+    功能测试           :         test1, after dev2, 10d
+    性能测试           :         test2, after test1, 5d
+```
+
+## 6. 饼图 (Pie Chart)
+
+技术栈占比:
+
+```mermaid
+pie title 项目技术栈占比
+    "React" : 35
+    "TypeScript" : 25
+    "Next.js" : 20
+    "Tailwind CSS" : 15
+    "其他" : 5
+```
+
+## 7. Git 分支图
+
+```mermaid
+gitGraph
+    commit
+    commit
+    branch develop
+    checkout develop
+    commit
+    commit
+    checkout main
+    merge develop
+    commit
+    branch feature
+    checkout feature
+    commit
+    checkout main
+    merge feature
+    commit
+```
+
+## 8. ER 图 (Entity Relationship)
+
+数据库表关系:
+
+```mermaid
+erDiagram
+    USER ||--o{ POST : creates
+    USER ||--o{ COMMENT : writes
+    POST ||--o{ COMMENT : has
+    
+    USER {
+        int id PK
+        string name
+        string email
+        datetime created_at
+    }
+    POST {
+        int id PK
+        int user_id FK
+        string title
+        text content
+        datetime published_at
+    }
+    COMMENT {
+        int id PK
+        int user_id FK
+        int post_id FK
+        text content
+        datetime created_at
+    }
+```
+
+## 总结
+
+以上展示了 Mermaid 支持的多种图表类型。如果所有图表都能正常渲染,说明 Mermaid 集成成功! 🎉
+
+你可以在 MDX 文件中使用 \`\`\`mermaid 代码块来创建各种图表。
+

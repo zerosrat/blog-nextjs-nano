@@ -3,6 +3,7 @@ import React, { ComponentPropsWithoutRef } from 'react'
 import Link from 'next/link'
 import { highlight } from 'sugar-high'
 import ImageWithPreview from '@/components/ImageWithPreview'
+import Mermaid from '@/components/Mermaid'
 
 type HeadingProps = ComponentPropsWithoutRef<'h1'>
 type ParagraphProps = ComponentPropsWithoutRef<'p'>
@@ -15,6 +16,7 @@ type TheadProps = ComponentPropsWithoutRef<'thead'>
 type TbodyProps = ComponentPropsWithoutRef<'tbody'>
 type ThProps = ComponentPropsWithoutRef<'th'>
 type TdProps = ComponentPropsWithoutRef<'td'>
+type PreProps = ComponentPropsWithoutRef<'pre'>
 
 // 样式配置对象，便于维护
 const mdxStyles = {
@@ -68,6 +70,28 @@ const components = {
   code: ({ children, ...props }: ComponentPropsWithoutRef<'code'>) => {
     const codeHTML = highlight(children as string)
     return <code dangerouslySetInnerHTML={{ __html: codeHTML }} {...props} />
+  },
+  pre: ({ children, ...props }: PreProps) => {
+    // 检查是否是 mermaid 代码块
+    if (React.isValidElement(children)) {
+      const childProps = children.props as { className?: string; children?: string }
+      
+      if (childProps?.className?.includes('language-mermaid')) {
+        // 提取 mermaid 代码内容
+        const code = childProps.children || ''
+        return <Mermaid chart={code.trim()} />
+      }
+    }
+
+    // 非 mermaid 代码块，保持原样渲染
+    return (
+      <pre 
+        className="bg-gray-50 dark:bg-zinc-900 rounded-lg p-4 overflow-x-auto my-6 border border-gray-200 dark:border-zinc-800"
+        {...props}
+      >
+        {children}
+      </pre>
+    )
   },
   Table: ({ data }: { data: { headers: string[]; rows: string[][] } }) => (
     <table className={mdxStyles.table}>
