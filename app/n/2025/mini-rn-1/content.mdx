@@ -1,5 +1,5 @@
 export const metadata = {
-  title: '从零实现 React Native: 浅尝桥通信',
+  title: '从零实现 React Native（1）: 桥通信的原理与实现',
   date: '2025-11-03',
   alternates: {
     canonical: '/n/2025/mini-rn-1',
@@ -10,7 +10,7 @@ export const metadata = {
 
 开始之前，为啥有这篇文章呢，这是一个自问自答的问题。
 
-我的职业生涯几乎一致在和 React Native(RN) 打交道。故事开始于读研期间，我做为前端开发和教研室两个后端师兄一起为导师做一个 C 端的项目，受到 React 的生态和 RN 的 Slogn 「write once run anywhere」的感召，我使用了基于 Expo 的 RN 技术栈来完成了 App 项目的开发与上线。
+我的职业生涯几乎一直在和 React Native(RN) 打交道。故事开始于读研期间，我做为前端开发和教研室两个后端师兄一起为导师做一个 C 端的项目，受到 React 的生态和 RN 的 Slogn 「write once run anywhere」的感召，我使用了基于 Expo 的 RN 技术栈来完成了 App 项目的开发与上线。
 
 而找实习时也凭借了 PC 和 App 的 React 技术栈经验得到了前司鹅厂的 offer，实习期间使用了 [Hippy-vue](https://hippyjs.org/#/hippy-vue/introduction)（公司的类 RN 框架，JS 侧使用 Vue 框架）实现了王者营地的战绩详情页。回想起那段实习的日子也是额外的充实，大部分工作时间投入在了 Coding 上，披星戴月下班回家在夜深没人的路上唱着自己喜欢的歌，觉得自己有无限可能。
 
@@ -58,7 +58,7 @@ const App = () => {
 
 回到这节的主题，我们关注的是桥通信，先贴下经典的桥架构图如下所示，大家可能已经在其他地方见到过很多次这张图了。我也会继续使用这张图来说明桥架构通信的本质是什么。
 
-![React Native 桥架构示意图](/static/images/mini-rn-1/bridge-architecture.awebp)
+![React Native 桥架构示意图](/static/images/mini-rn-1/bridge-architecture.webp)
 
 刚刚有提到 JS 和 Native 的通信是双向的，我们先看看 JS 是如何调用 Native 的，在这里我们其实可以和浏览器进行类比。不同于在浏览器中运行的 JS 其宿主是浏览器，而 RN JS 的运行宿主是嵌入在手机 OS 的 JSC 引擎。就如浏览器给 JS 环境提供了 window 对象及其方法供 JS 调用，嵌入 JS 引擎也是如此，为 JS 环境 注入了 `global` 对象及其方法供 JS 调用，而其中的方法就包含了 `global.nativeCallSyncHook` 这个关键方法（简称 `callSync`）。`callSync` 的入参包含了 JS 需要调用 Native 侧具体什么方法的信息，而每次 JS 侧调用 `callSync` 就可以触发 C++ 侧提前为该方法注册的回调函数，可以理解为 JS 调用该方法时就会把入参输入经过桥给 C++ 的对应函数并执行，而这一切是通过 JSC 的 API 做到的。再以之前的用 Native 模块获取尺寸的代码为例，JS 侧调用 `Dimensions.get('window')` 时最终会调用 `callSync` 方法，入参包含了模块信息为 `Dimensions`、方法为 `get`、参数为 `'window'`，到 C++ 回调后再交由 C++ 转发给具体模块的实现进行处理。
 
@@ -553,3 +553,7 @@ void JSCExecutor::invokeCallback(int callId, const std::string &result,
 
 1. [React Native在美团外卖客户端的实践](https://tech.meituan.com/2019/12/19/meituan-mrn-practice.html)
 2. https://github.com/facebook/react-native/tree/v0.57.8
+
+---
+
+📝 本文首发于个人博客: https://zerosrat.dev
