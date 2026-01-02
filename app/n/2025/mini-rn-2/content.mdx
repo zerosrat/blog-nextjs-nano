@@ -44,14 +44,293 @@ Maybe it's not the right time. 先理解核心，再扩展边界。先放下 And
 
 在上一篇博客中，受制于篇幅的限制，跳过了对构建系统的讲解。而在跨平台支持中，天然需要迭代构建系统，也正是对其展开讲讲的一个好时机。
 
-### Make 和 CMake 是什么
+### Make 是什么
 
-hi
+Make 是一个诞生于 1976 年的构建工具，它的工作原理很简单：描述文件之间的依赖关系，然后只重新编译"变化过的"文件。Make 适合于 **需要多步骤构建流程** 的项目，本项目的构建流程较为复杂：JS 产物打包 -> CMake 配置 -> C++ 产物编译 -> 运行 test 代码，很适合引入 Make 进行任务流程的编排。
+
+Make 工具的配套 `Makefile` 文件是一个**文本配置文件**，它定义了构建规则、依赖关系和执行命令，可以将其理解为 npm 和 package.json 的关系。
+
+以下是基于 macos 编译和测试的 Makefile 文件摘要代码，核心步骤包含了 `js-build`, `configure`, `test`。
+
+```makefile
+# ============================================
+# 变量定义 (Makefile 第 10-13 行)
+# ============================================
+BUILD_DIR = build
+CMAKE_BUILD_TYPE ?= Debug
+CORES = $(shell sysctl -n hw.ncpu)  # 动态检测 CPU 核心数
+
+# ============================================
+# 主要构建目标 - 依赖链设计
+# ============================================
+
+# 默认目标：make 等价于 make build
+.PHONY: all
+all: build
+
+# 核心构建流程：js-build → configure → 实际编译
+.PHONY: build
+build: js-build configure
+    @echo "🔨 Building Mini React Native..."
+    @cd $(BUILD_DIR) && make -j$(CORES)
+    @echo "✅ Build complete"
+
+# ============================================
+# 步骤 1：JavaScript 构建 (第 29-33 行)
+# ============================================
+.PHONY: js-build
+js-build:
+    @echo "📦 Building JavaScript bundle..."
+    @npm run build    # 执行 rollup -c，生成 dist/bundle.js
+    @echo "✅ JavaScript bundle built"
+
+# ============================================
+# 步骤 2：CMake 配置 (第 22-26 行)
+# ============================================
+.PHONY: configure
+configure:
+    @echo "🔧 Configuring build system..."
+    @mkdir -p $(BUILD_DIR)
+    @cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
+    @echo "✅ Configuration complete"
+
+# ============================================
+# 步骤 3：macos 构建
+# ============================================
+.PHONY: build
+build: js-build configure
+    @echo "🔨 Building Mini React Native..."
+    @cd $(BUILD_DIR) && make -j$(CORES)
+    @echo "✅ Build complete"
+
+# ============================================
+# 步骤 4：分层测试流程 (第 91-130 行)
+# ============================================
+
+# 完整测试：build → 4 个测试依次执行
+.PHONY: test
+test: build
+    @echo "🧪 Running all tests..."
+    @echo "\n📝 Test 1: Basic functionality test"
+    @./$(BUILD_DIR)/mini_rn_test
+    @echo "\n📝 Test 2: Module framework test"
+    @./$(BUILD_DIR)/test_module_framework
+    @echo "\n📝 Test 3: Integration test"
+    @./$(BUILD_DIR)/test_integration
+    @echo "\n📝 Test 4: Performance test"
+    @./$(BUILD_DIR)/test_performance
+    @echo "\n✅ All tests complete"
+
+# 单独的测试目标 - 允许细粒度测试
+.PHONY: test-basic
+test-basic: build
+    @echo "🧪 Running basic functionality test..."
+    @./$(BUILD_DIR)/mini_rn_test
+
+.PHONY: test-performance
+test-performance: build
+    @echo "🧪 Running performance test..."
+    @./$(BUILD_DIR)/test_performance
+```
+
+在引入了 make 后，可以很方便的进行复杂流程的编排，例如我们想要运行测试代码时，实际的发生的事情如下所示。
+
+
+```text
+用户命令: make test
+    ↓
+test: build
+    ↓
+build: js-build configure
+        ↓             ↓
+    js-build          configure
+        ↓                   ↓
+    npm run build       cmake ..
+        ↓                   ↓
+    dist/bundle.js      build/Makefile
+                            ↓
+                        make -j8 (CMake 管理的依赖)
+                            ↓
+                        libmini_react_native.a
+                            ↓
+                        mini_rn_test (等 4 个可执行文件)
+```
+
+### CMake 是什么
+
+在把 C++ 代码编译成二进制文件这一步之前，其实构建系统提前引入了 CMake 进行管理。CMake 不是“构建工具”，而是“构建系统的构建系统”，在这个场景中 CMake 实际上生成了编译代码的工具 Makefile 文件。CMake 会读取 `CMakeLists.txt`，然后生成原生的构建文件。
+
+Why CMake？因为 mini-rn 项目开始之初就是要考虑多平台支持的，为了实现这个 feature，便会遇到 **多平台构建的复杂性** 这个问题。
+
+**问题 1：平台特定源文件管理** 
+
+不同平台需要不同的实现：
+
+- macOS：使用 `IOKit` 获取硬件信息
+- iOS：使用 `UIDevice` 获取设备信息
+
+没有 CMake 需要维护两套构建脚本，引入 CMake 后可通过条件编译一套配置搞定。
+
+**问题 2：系统框架动态链接**
+
+不同平台需要链接不同框架：macOS 需要 `IOKit`，iOS 需要 `UIKit`。 
+
+引入 CMake 后可自动检测并链接正确的框架。
+
+**解决效果**
+
+**引入 CMake 前**：需要维护多套构建脚本，手动管理复杂配置，容易出错。
+
+**引入 CMake 后**：一套 `CMakeLists.txt` 支持所有平台，自动处理平台差异，大幅降低维护成本。
 
 ### 改动一：Makefile 新增 iOS 构建目标
 
-hi
+在 macos 的可拓展的构建系统配置已经就绪后，接下来我们来看看如何改动以支持 iOS。
+
+#### 新增的 4 个 iOS 目标
+
+原本基于 macos 的 4 个目标及其路径为 test -> build -> configure ->test，现在我们再来为 iOS 支持上其目标和路径。
+
+```makefile
+# iOS 构建配置（模拟器）
+.PHONY: ios-configure
+ios-configure:
+    @mkdir -p $(BUILD_DIR)_ios
+    @cd $(BUILD_DIR)_ios && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer cmake \
+        -DCMAKE_SYSTEM_NAME=iOS \
+        -DCMAKE_OSX_ARCHITECTURES=$$(uname -m) \
+        -DCMAKE_OSX_SYSROOT=$$(DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun --sdk iphonesimulator --show-sdk-path) \
+        -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+        ..
+
+# 构建 iOS 版本（模拟器）
+.PHONY: ios-build
+ios-build: js-build ios-configure
+    @cd $(BUILD_DIR)_ios && make -j$(CORES)
+
+# iOS 测试目标
+.PHONY: ios-test
+ios-test: ios-build
+    @./test_ios.sh all
+
+# iOS DeviceInfo 测试
+.PHONY: ios-test-deviceinfo
+ios-test-deviceinfo: ios-build
+    @./test_ios.sh deviceinfo
+```
+
+#### 关键设计决策
+
+**1. 独立构建目录**
+
+macOS 用 `build/`，iOS 用 `build_ios/`，互不干扰：
+
+```makefile
+@mkdir -p $(BUILD_DIR)_ios   # iOS 构建目录
+```
+
+**2. 仅支持 iOS 模拟器**
+
+为什么不支持真机？因为：
+
+- 真机需要开发者证书和配置文件
+- 模拟器足够验证 Bridge 通信机制
+- 降低环境配置复杂度
+
+```makefile
+-DCMAKE_OSX_SYSROOT=$$(xcrun --sdk iphonesimulator --show-sdk-path)
+```
+
+**3. 语义化命令**
+
+`make ios-configure` 比写一长串 CMake 命令简洁太多。这就是 Makefile 作为用户接口的价值。
 
 ### 改动二：CMake 平台条件编译
 
-hi
+#### 原来的代码（仅 macOS）
+
+```cmake
+# 原始版本 - 仅支持 macOS
+if(APPLE)
+    set(PLATFORM_SOURCES
+        src/macos/modules/deviceinfo/DeviceInfoModule.mm
+    )
+    find_library(IOKIT_FRAMEWORK IOKit)
+endif()
+
+target_link_libraries(mini_react_native
+    ${JAVASCRIPTCORE_FRAMEWORK}
+    ${IOKIT_FRAMEWORK}
+)
+```
+
+#### 演进后的代码（macOS + iOS）
+
+```cmake
+# 演进版本 - 支持 macOS + iOS
+if(APPLE)
+    # 根据具体平台选择源文件
+    if(${CMAKE_SYSTEM_NAME} MATCHES "iOS")
+        set(PLATFORM_SOURCES
+            src/ios/modules/deviceinfo/DeviceInfoModule.mm
+        )
+    else()
+        # macOS
+        set(PLATFORM_SOURCES
+            src/macos/modules/deviceinfo/DeviceInfoModule.mm
+        )
+    endif()
+
+    # 平台特定框架
+    if(${CMAKE_SYSTEM_NAME} MATCHES "iOS")
+        find_library(UIKIT_FRAMEWORK UIKit)
+        set(PLATFORM_FRAMEWORKS ${UIKIT_FRAMEWORK})
+    else()
+        find_library(IOKIT_FRAMEWORK IOKit)
+        set(PLATFORM_FRAMEWORKS ${IOKIT_FRAMEWORK})
+    endif()
+
+    # 统一链接
+    target_link_libraries(mini_react_native
+        ${JAVASCRIPTCORE_FRAMEWORK}
+        ${FOUNDATION_FRAMEWORK}
+        ${PLATFORM_FRAMEWORKS}
+    )
+endif()
+```
+
+#### 三个关键变化
+
+**1. 源文件分离**
+
+```text
+src/
+├── macos/modules/deviceinfo/DeviceInfoModule.mm
+└── ios/modules/deviceinfo/DeviceInfoModule.mm
+```
+
+两个文件虽然文件名相同，但实现不同：
+
+- **macOS 版本**：用 IOKit 获取硬件信息
+- **iOS 版本**：用 UIDevice 获取设备信息
+
+**2. 框架动态链接**
+
+| 平台      | 共享框架                      | 平台特定框架 |
+|-----------|-------------------------------|--------------|
+| macOS     | JavaScriptCore, Foundation    | IOKit        |
+| iOS       | JavaScriptCore, Foundation    | UIKit        |
+
+**3. 部署目标设置**
+
+```cmake
+if(${CMAKE_SYSTEM_NAME} MATCHES "iOS")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0")
+elseif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")
+endif()
+```
+
+## 变与不变
+

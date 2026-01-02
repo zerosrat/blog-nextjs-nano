@@ -148,6 +148,7 @@ export function getLanguageDisplayName(lang: string): string {
     css: 'CSS',
     sql: 'SQL',
     text: 'Text',
+    makefile: 'Makefile',
   }
 
   return displayNames[lang.toLowerCase()] || lang.toUpperCase()
