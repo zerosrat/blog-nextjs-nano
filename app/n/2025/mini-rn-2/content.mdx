@@ -38,9 +38,11 @@ export const metadata = {
 
 ### 舍与得
 
-在两个下午一次一次尝试失败后，我突然意识到一个问题。我的目标不是支持所有平台，而是学习 RN 的原理。如果我头铁死咬着 Android 支持不放的话，最终可能对整个项目失去信心，放弃后续的视图渲染和 JSI 新架构迁移工作。
-
 Maybe it's not the right time. 先理解核心，再扩展边界。先放下 Android 的支持，或许未来的某一天再回头来看这件事。
+
+这个决定让我想起了 MVP（最小可行产品）的原则：先让核心功能跑通，再逐步完善。在学习项目中，这个原则同样适用——先掌握本质，再扩展边界。
+
+既然决定专注于 iOS 和 macOS 双平台，那么接下来就需要一套优雅的构建系统来支撑跨平台开发。一个好的构建系统不仅能让开发者轻松切换平台，更重要的是，它能为后续的代码复用奠定基础。
 
 ## 构建系统的演进
 
@@ -48,7 +50,9 @@ Maybe it's not the right time. 先理解核心，再扩展边界。先放下 And
 
 ### Make 是什么
 
-Make 是一个诞生于 1976 年的构建工具，它的工作原理很简单：描述文件之间的依赖关系，然后只重新编译"变化过的"文件。Make 适合于 **需要多步骤构建流程** 的项目，本项目的构建流程较为复杂：JS 产物打包 -> CMake 配置 -> C++ 产物编译 -> 运行 test 代码，很适合引入 Make 进行任务流程的编排。
+Make 是一个诞生于 1976 年的构建工具，它的工作原理很简单：描述文件之间的依赖关系，然后只重新编译"变化过的"文件。
+
+Make 适合于 **需要多步骤构建流程** 的项目，本项目的构建流程较为复杂：JS 产物打包 -> CMake 配置 -> C++ 产物编译 -> 运行 test 代码，很适合引入 Make 进行任务流程的编排。
 
 Make 工具的配套 `Makefile` 文件是一个**文本配置文件**，它定义了构建规则、依赖关系和执行命令，可以将其理解为 npm 和 package.json 的关系。
 
@@ -96,14 +100,6 @@ configure:
     @cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
     @echo "✅ Configuration complete"
 
-# ============================================
-# 步骤 3：macos 构建
-# ============================================
-.PHONY: build
-build: js-build configure
-    @echo "🔨 Building Mini React Native..."
-    @cd $(BUILD_DIR) && make -j$(CORES)
-    @echo "✅ Build complete"
 
 # ============================================
 # 步骤 4：分层测试流程 (第 91-130 行)
@@ -158,6 +154,29 @@ build: js-build configure
                         mini_rn_test (等 4 个可执行文件)
 ```
 
+**Before 引入 Make**：想象一下，如果没有 Make，每次修改代码后你需要手动执行
+```bash
+# 步骤1：构建 JavaScript
+npm run build
+
+# 步骤2：配置 CMake
+mkdir -p build
+cd build && cmake ..
+
+# 步骤3：编译 C++
+cd build && make -j8
+
+# 步骤4：运行测试
+./build/mini_rn_test
+./build/test_module_framework
+./build/test_integration
+./build/test_performance
+```
+每次都要记住这么多命令，还要确保执行顺序正确。更糟糕的是，如果某个步骤失败了，你需要手动判断从哪里重新开始。
+
+**After 引入 Make**：`make test` 一条命令搞定所有事情
+
+
 ### CMake 是什么
 
 在把 C++ 代码编译成二进制文件这一步之前，其实构建系统提前引入了 CMake 进行管理。CMake 不是“构建工具”，而是“构建系统的构建系统”，在这个场景中 CMake 实际上生成了编译代码的工具 Makefile 文件。CMake 会读取 `CMakeLists.txt`，然后生成原生的构建文件。
@@ -184,6 +203,13 @@ Why CMake？因为 mini-rn 项目开始之初就是要考虑多平台支持的�
 **引入 CMake 前**：需要维护多套构建脚本，手动管理复杂配置，容易出错。
 
 **引入 CMake 后**：一套 `CMakeLists.txt` 支持所有平台，自动处理平台差异，大幅降低维护成本。
+
+**CMake 关键语法解释**：
+- `CMAKE_SYSTEM_NAME`：CMake 内置变量，表示目标系统名称（iOS、Darwin等）
+- `find_library()`：在系统中查找指定的库文件
+- `target_link_libraries()`：将库文件链接到目标可执行文件
+- `set()`：设置变量的值
+- `if(MATCHES)`：条件判断，支持正则表达式匹配
 
 ### 改动一：Makefile 新增 iOS 构建目标
 
@@ -416,6 +442,48 @@ void DeviceInfoModule::invoke(const std::string& methodName,
 
 **Bridge 通信协议、方法注册机制、消息分发逻辑，完全都是可以复用的！**真正不同的，只是那几个 `xxxImpl()` 方法的底层实现。
 
+### 复用的边界
+
+但这里有个更深层的问题：**为什么有些代码能 100% 复用，有些却完全不能？**
+
+让我们看看实际的复用率统计：
+
+| 代码类型 | 复用率 | 为什么？ |
+|---------|--------|----------|
+| Bridge 通信逻辑 | 100% | 协议标准化 |
+| 模块注册机制 | 100% | 框架层抽象 |
+| 错误处理机制 | 100% | 异常处理逻辑相同 |
+| 设备唯一标识 | 0% | 平台理念完全不同 |
+| 系统版本获取 | 95% | 只有注释不同 |
+| 设备型号获取 | 85% | 都用 sysctlbyname，iOS多了模拟器判断 |
+
+#### 100% 复用：协议的力量
+
+**为什么 Bridge 通信能 100% 复用？**
+
+因为这是协议层，不管底层平台怎么变，JavaScript 和 Native 之间的通信协议是固定的。方法名、参数、回调 ID、错误处理这些都是标准化的。就像 HTTP 协议，不管服务器是 Linux 还是 Windows，浏览器都用同样的方式发请求。
+
+#### 0% 复用：平台的鸿沟
+
+**为什么设备唯一标识完全不能复用？**
+
+macOS 追求真正的硬件级别唯一性，有复杂的降级机制；iOS 在 MVP 阶段采用了简化策略，每次启动生成新ID。这不是技术问题，而是：
+
+1. **平台哲学**的差异：桌面 vs 移动的隐私理念
+2. **开发策略**的差异：完整实现 vs MVP验证
+
+#### 复用边界的哲学
+
+通过 DeviceInfo 模块，我们发现了跨平台复用的三个层次：
+
+1. **协议层**：100% 复用，因为标准统一
+2. **API 层**：看运气，苹果生态有优势
+3. **实现层**：看平台差异，移动端更复杂
+
+这揭示了一个残酷的真相：**跨平台的成本永远存在，只是被转移了。**
+
+可以用抽象基类隐藏差异，但差异本身不会消失。关键是找到合适的边界，让复用最大化，让差异最小化。
+
 ### 头文件的魔法
 
 解决方案其实就是基于 **面向对象** 的：
@@ -483,6 +551,12 @@ std::string DeviceInfoModule::getUniqueIdImpl() const {
     }
 }
 ```
+
+**Objective-C++ 关键字解释**：
+- `@autoreleasepool`：自动释放池，管理 Objective-C 对象的内存，确保及时释放
+- `__bridge`：ARC（自动引用计数）中的桥接转换，在 C/C++ 指针和 Objective-C 对象间转换
+- `[object method]`：Objective-C 的方法调用语法
+- `.mm` 文件扩展名：表示 Objective-C++ 文件，可以混合使用 C++、C 和 Objective-C 代码
 
 两个平台的实现文件自动拥有了完整的 Bridge 通信能力，现在只需要实现平台差异部分即可~
 
