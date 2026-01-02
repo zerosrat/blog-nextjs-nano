@@ -1,0 +1,57 @@
+export const metadata = {
+  title: '从零实现 React Native（2）: 跨平台支持',
+  date: '2025-12-31',
+  alternates: {
+    canonical: '/n/2025/mini-rn-2',
+  },
+};
+
+## 平台支持的取舍
+
+在上一篇《从零实现 React Native（1）: 桥通信的原理与实现》中，基于 **macos** 平台实现了 JS 与 Native 的双向桥通信，在本篇中将对其他平台进行支持，实现「write once，run anywhere」这个理念。
+
+接下来便来进行 iOS 和 Android 平台的支持工作。
+
+### iOS 进展顺利
+
+在支持了 macos 端后，**支持 iOS** 是很容易的，可以马上着手来搞这个事情。得益于 Apple 生态带来的：macOS 和 iOS 都内置了 JavaScriptCore.framework，这意味着无需额外的引擎移植工作；且编程 API 很相似，这意味着差异化实现较少，大多可复用或类比实现。
+
+事实上，我只花了**半天时间**就完成了 iOS 端的支持工作，其中主要的时间花在了构建配置的修改、测试示例的新增和调整，少部分时间花在了差异化的 `DeviceInfo` 模块实现。
+
+得益于 Apple 生态，iOS 的支持工作中大部分代码都是复用的，**复用率 90%**。因为 macos 和 iOS 的 JSC API 一致，以及 C++ 语言的优势，可以用于跨端复用。复用的内容包含：
+
+- JSCExector
+- Bridge 通信逻辑
+- 模块注册逻辑
+
+### Android 滑铁卢
+
+在顺利支持了 iOS 后，预想是 Android 的支持也不会太难，但实际做起来发现没这么简单。
+
+记得是周末的午后的轻松下午，我先把 Android 的相关环境搭建好（包括 Android Studio、Java SDK 及其环境变量、NDK 等），然后进入 JSC 的移植工作。Why JSC 移植？因为不同于 Apple 生态，Android 系统是没有内置 JSC 引擎的。而正是这一步让我陷入泥潭。
+
+我首先尝试了三方编译的版本，但是要么遇到了 libjsc.so（JSC 编译后的二进制文件，可供 Android 平台运行，可类比理解为前端的 wasm） 不支持 arm64（由于是 MBP 机器，安卓模拟器必须用 arm64 而非 x86 架构的），要么是遇到了 libjsc.so 和 NDK 版本不兼容。然后尝试了从社区提供的 [jsc-android-buildscripts](https://github.com/react-native-community/jsc-android-buildscripts) 自行编译，也遇到了各种问题编译失败，考虑到每次编译时间：2-3 小时，这也是一个艰难的旅程。
+
+就算解决了 JavaScriptCore，还有 JNI 在等着我。Java 和 C++ 之间的桥梁不是简单的函数调用。我要处理诸如：类型转换、线程同步等问题。前方有很多新的坑在等着我。
+
+### 舍与得
+
+在两个下午一次一次尝试失败后，我突然意识到一个问题。我的目标不是支持所有平台，而是学习 RN 的原理。如果我头铁死咬着 Android 支持不放的话，最终可能对整个项目失去信心，放弃后续的视图渲染和 JSI 新架构迁移工作。
+
+Maybe it's not the right time. 先理解核心，再扩展边界。先放下 Android 的支持，或许未来的某一天再回头来看这件事。
+
+## 构建系统的演进
+
+在上一篇博客中，受制于篇幅的限制，跳过了对构建系统的讲解。而在跨平台支持中，天然需要迭代构建系统，也正是对其展开讲讲的一个好时机。
+
+### Make 和 CMake 是什么
+
+hi
+
+### 改动一：Makefile 新增 iOS 构建目标
+
+hi
+
+### 改动二：CMake 平台条件编译
+
+hi
