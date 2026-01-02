@@ -6,6 +6,8 @@ export const metadata = {
   },
 };
 
+> 上一回：[从零实现 React Native（1）: 桥通信的原理与实现](https://zerosrat.dev/n/2025/mini-rn-1)
+
 ## 平台支持的取舍
 
 在上一篇《从零实现 React Native（1）: 桥通信的原理与实现》中，基于 **macos** 平台实现了 JS 与 Native 的双向桥通信，在本篇中将对其他平台进行支持，实现「write once，run anywhere」这个理念。
@@ -185,11 +187,21 @@ Why CMake？因为 mini-rn 项目开始之初就是要考虑多平台支持的�
 
 ### 改动一：Makefile 新增 iOS 构建目标
 
-在 macos 的可拓展的构建系统配置已经就绪后，接下来我们来看看如何改动以支持 iOS。
+在 macOS 的可扩展构建系统配置就绪后，接下来看看如何改动以支持 iOS。
+
+**改动一实现了什么？**
+
+**核心目标**：在现有 Makefile 基础上，新增 iOS 平台的完整构建流程，实现"一套 Makefile，双平台支持"。
+
+**具体实现**：
+1. **新增 4 个 iOS 专用目标**：`ios-configure`、`ios-build`、`ios-test`、`ios-test-deviceinfo`
+2. **建立 iOS 构建流程**：js-build → ios-configure → ios-build → ios-test
+3. **实现平台隔离**：iOS 使用独立的 `build_ios/` 目录，与 macOS 的 `build/` 目录完全分离
+4. **自动化 Xcode 环境配置**：自动检测 SDK 路径、设置开发者目录、配置模拟器架构
 
 #### 新增的 4 个 iOS 目标
 
-原本基于 macos 的 4 个目标及其路径为 test -> build -> configure ->test，现在我们再来为 iOS 支持上其目标和路径。
+原本基于 macOS 的构建路径是：js-build → configure → build → test，现在为 iOS 新增了对应的平行路径：js-build → ios-configure → ios-build → ios-test。
 
 ```makefile
 # iOS 构建配置（模拟器）
@@ -247,6 +259,19 @@ macOS 用 `build/`，iOS 用 `build_ios/`，互不干扰：
 `make ios-configure` 比写一长串 CMake 命令简洁太多。这就是 Makefile 作为用户接口的价值。
 
 ### 改动二：CMake 平台条件编译
+
+**改动二实现了什么？**
+
+**核心目标**：让 CMake 能够智能识别目标平台，并自动选择正确的源文件和系统框架，实现"一套 CMakeLists.txt，智能适配双平台"。
+
+**具体实现**：
+1. **平台检测机制**：通过 `CMAKE_SYSTEM_NAME` 变量自动识别是 macOS 还是 iOS
+2. **源文件智能选择**：根据平台自动选择对应的 `.mm` 实现文件
+3. **框架动态链接**：iOS 链接 UIKit，macOS 链接 IOKit，共享 JavaScriptCore 和 Foundation
+4. **编译标志自动设置**：为 Objective-C++ 文件自动设置 ARC 标志
+5. **部署目标配置**：iOS 设为 12.0+，macOS 设为 10.15+
+
+**设计精髓**：编译时确定，运行时无开销。最终的 iOS 二进制文件中完全没有 macOS 代码，反之亦然。
 
 #### 原来的代码（仅 macOS）
 
@@ -332,5 +357,163 @@ elseif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 endif()
 ```
 
-## 变与不变
+### 两个改动的协同作用
 
+**改动一 + 改动二 = 完美的跨平台构建系统**
+
+这两个改动巧妙地分工合作：
+
+- **Makefile（改动一）**：作为用户接口层，提供简单统一的命令，隐藏平台配置的复杂性
+- **CMake（改动二）**：作为构建逻辑层，智能处理平台差异，自动选择正确的源文件和框架
+
+**协同效果**：
+
+1. **开发者体验**：`make build` vs `make ios-build`，命令接口一致
+2. **构建隔离**：两个平台使用独立目录，可以并行构建，切换无需清理
+3. **智能适配**：CMake 根据 Makefile 传入的平台信息，自动配置所有细节
+4. **零运行时开销**：编译时就确定了平台，最终二进制文件纯净无冗余
+
+这种设计让跨平台支持变得既强大又优雅：开发者只需要记住两个命令，背后的所有复杂性都被自动化处理了。
+
+## DeviceInfo - 变与不变
+
+在构建系统演进完成后，我们来深入分析 DeviceInfo 模块的双平台实现。这个模块展示了跨平台架构设计的智慧：如何在保持接口统一的同时，让每个平台发挥自身优势。
+
+### 90% 复用率是怎么做到的？
+
+**关键洞察：大部分逻辑其实是平台无关的**
+
+仔细分析 DeviceInfo 模块，你会发现一个惊人的事实：
+
+```cpp
+// 这些逻辑在任何平台都一样
+std::string DeviceInfoModule::getName() const {
+    return "DeviceInfo";
+}
+
+std::vector<std::string> DeviceInfoModule::getMethods() const {
+    return {
+        "getUniqueId",       // methodId = 0
+        "getSystemVersion",  // methodId = 1
+        "getDeviceId"        // methodId = 2
+    };
+}
+
+void DeviceInfoModule::invoke(const std::string& methodName,
+                             const std::string& args, int callId) {
+    try {
+        if (methodName == "getUniqueId") {
+            std::string uniqueId = getUniqueIdImpl();  // 只是调用，不关心具体实现
+            sendSuccessCallback(callId, uniqueId);
+        } else {
+            sendErrorCallback(callId, "Unknown method: " + methodName);
+        }
+    } catch (const std::exception& e) {
+        sendErrorCallback(callId, "Method invocation failed: " + std::string(e.what()));
+    }
+}
+```
+
+**Bridge 通信协议、方法注册机制、消息分发逻辑，完全都是可以复用的！**真正不同的，只是那几个 `xxxImpl()` 方法的底层实现。
+
+### 头文件的魔法
+
+解决方案其实就是基于 **面向对象** 的：
+
+```cpp
+// common/modules/DeviceInfoModule.h
+class DeviceInfoModule : public NativeModule {
+public:
+    DeviceInfoModule();
+    ~DeviceInfoModule() override = default;
+
+    // NativeModule 接口实现 - 所有平台共享
+    std::string getName() const override;
+    std::vector<std::string> getMethods() const override;
+    void invoke(const std::string& methodName, const std::string& args,
+                int callId) override;
+
+    // 平台特定的实现接口 - 让各平台去填这些"洞"
+    std::string getUniqueIdImpl() const;
+    std::string getSystemVersionImpl() const;
+    std::string getDeviceIdImpl() const;
+
+private:
+    // 工具方法
+    std::string createSuccessResponse(const std::string& data) const;
+    std::string createErrorResponse(const std::string& error) const;
+};
+```
+
+注意这里没有用虚函数，因为已经引入了 CMake 在编译时确定了对应平台的文件，不需要运行时多态，结果是 **同一个头文件，不同的实现文件**。每个平台都有自己的 `.mm` 文件来实现这些方法，编译时自动选择对应的实现。
+
+基类定义了 what（做什么），各平台实现 how （怎么做）。Bridge 通信、方法注册、消息分发等这些复杂的逻辑只写一遍，所有平台自动继承。
+
+### 分平台实现
+
+```cpp
+// macOS 实现 - src/macos/modules/deviceinfo/DeviceInfoModule.mm
+std::string DeviceInfoModule::getUniqueIdImpl() const {
+    @autoreleasepool {
+        // 尝试获取硬件 UUID
+        io_registry_entry_t ioRegistryRoot =
+            IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/");
+        CFStringRef uuidCf = (CFStringRef)IORegistryEntryCreateCFProperty(
+            ioRegistryRoot, CFSTR(kIOPlatformUUIDKey), kCFAllocatorDefault, 0);
+
+        if (uuidCf) {
+            NSString* uuid = (__bridge NSString*)uuidCf;
+            std::string result = [uuid UTF8String];
+            CFRelease(uuidCf);
+            return result;
+        }
+        // 多层降级机制...
+        return "macOS-" + getDeviceIdImpl() + "-" + getSystemVersionImpl();
+    }
+}
+
+// iOS 实现 - src/ios/modules/deviceinfo/DeviceInfoModule.mm
+std::string DeviceInfoModule::getUniqueIdImpl() const {
+    @autoreleasepool {
+        // iOS 简化实现：使用 NSUUID 生成唯一标识
+        // 注意：这个实现每次启动都会生成新的ID，适用于MVP测试
+        NSUUID* uuid = [NSUUID UUID];
+        NSString* uuidString = [uuid UUIDString];
+        return [uuidString UTF8String];
+    }
+}
+```
+
+两个平台的实现文件自动拥有了完整的 Bridge 通信能力，现在只需要实现平台差异部分即可~
+
+### 应自动化尽自动化
+
+DeviceInfo 模块的自动化实现揭示了一个重要原则：
+
+**好的跨平台架构不是让代码在所有平台都能跑，而是让正确的代码在正确的平台上跑。**
+
+通过这个项目的三层自动化体系：
+
+1. **Makefile 自动化**：统一的命令接口，隐藏平台配置复杂性
+2. **CMake 自动化**：智能的源文件选择和框架链接
+3. **编译器自动化**：平台特定的二进制生成
+
+这样的架构让开发者专注于业务逻辑，而把平台适配的复杂性交给了工具链。
+
+真正的自动化不是写一份代码到处跑，而是：
+- **开发体验统一**：`make build` vs `make ios-build`，命令接口一致
+- **实现策略分离**：每个平台有最适合的实现方式
+- **构建过程透明**：开发者不需要关心 Xcode SDK 路径、编译标志等细节
+
+这种设计在面对更复杂的系统时依然有效：只要保持接口统一、实现分离、构建自动化，就能优雅地扩展到视图渲染、事件处理等更复杂的场景。
+
+## 彩蛋
+
+**项目地址**: https://github.com/zerosrat/mini-react-native
+
+当前项目中包含了本篇文章中的全部内容:
+
+- ✅ iOS 构建系统适配
+- ✅ iOS 跨平台的差异化实现（DeviceInfo）
+
+完成本阶段后，项目已经具备了进入第三阶段的基础：**视图渲染系统**。

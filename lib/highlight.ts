@@ -32,7 +32,7 @@ export async function highlightCode(code: string, lang: string = 'text'): Promis
       defaultColor: 'light',
     })
 
-    console.log('codeToHtml', html)
+    // console.log('codeToHtml', html)
 
     // 存入缓存
     highlightCache.set(cacheKey, html)
