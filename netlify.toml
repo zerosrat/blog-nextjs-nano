@@ -5,6 +5,20 @@
 [build.environment]
   NODE_VERSION = "22"
 
+# Serve the running dashboard from its Vercel origin without changing the URL.
+# These rules must precede the blog fallback. Keep the /run prefix upstream.
+[[redirects]]
+  from = "/run"
+  to = "https://run.zerosrat.dev/run/"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/run/*"
+  to = "https://run.zerosrat.dev/run/:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
