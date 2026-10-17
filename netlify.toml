@@ -9,8 +9,8 @@
 # These rules must precede the blog fallback. Keep the /run prefix upstream.
 [[redirects]]
   from = "/run"
-  to = "/run/"
-  status = 301
+  to = "https://run.zerosrat.dev/run/"
+  status = 200
   force = true
 
 [[redirects]]
